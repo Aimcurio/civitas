@@ -1,0 +1,20 @@
+=== CIVITAS-1M HOT PATH TIMING MEASUREMENTS ===
+Timestamp: Instant { t: 4611863292.916470603s }
+
+--- Population Scale: N = 1000 ---
+sim.step() [1 tick]: 0.2084 ms
+compute_authoritative_state_hash(): 0.0718 ms (hash: f0f981a2c675a73c)
+save_to_file(): 1.9618 ms
+load_from_file(): 14.7705 ms
+
+--- Population Scale: N = 10000 ---
+sim.step() [1 tick]: 1.1653 ms
+compute_authoritative_state_hash(): 0.5684 ms (hash: a8d9c6aaaef9adf1)
+save_to_file(): 4.7905 ms
+load_from_file(): 10.1494 ms
+
+--- Population Scale: N = 100000 ---
+sim.step() [1 tick]: 2.3988 ms
+compute_authoritative_state_hash(): 3.3647 ms (hash: db74e4840186230c)
+save_to_file(): 41.9628 ms
+load_from_file(): 28.2722 ms
