@@ -1,3 +1,5 @@
 /target
 **/*.rs.bk
 *.civ
+.agents/
+ORIGINAL_REQUEST.md

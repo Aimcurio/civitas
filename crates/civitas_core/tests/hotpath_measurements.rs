@@ -25,7 +25,12 @@ fn measure_hotpaths() {
         let start = Instant::now();
         sim.step();
         let step_dur = start.elapsed();
-        writeln!(log, "sim.step() [1 tick]: {:.4} ms", step_dur.as_secs_f64() * 1000.0).unwrap();
+        writeln!(
+            log,
+            "sim.step() [1 tick]: {:.4} ms",
+            step_dur.as_secs_f64() * 1000.0
+        )
+        .unwrap();
 
         // 2. Measure compute_authoritative_state_hash
         let start = Instant::now();
@@ -44,12 +49,22 @@ fn measure_hotpaths() {
         let start = Instant::now();
         save_to_file(&mut sim.world, 42, &temp_save).unwrap();
         let save_dur = start.elapsed();
-        writeln!(log, "save_to_file(): {:.4} ms", save_dur.as_secs_f64() * 1000.0).unwrap();
+        writeln!(
+            log,
+            "save_to_file(): {:.4} ms",
+            save_dur.as_secs_f64() * 1000.0
+        )
+        .unwrap();
 
         let start = Instant::now();
         let _snap = load_from_file(&temp_save).unwrap();
         let load_dur = start.elapsed();
-        writeln!(log, "load_from_file(): {:.4} ms", load_dur.as_secs_f64() * 1000.0).unwrap();
+        writeln!(
+            log,
+            "load_from_file(): {:.4} ms",
+            load_dur.as_secs_f64() * 1000.0
+        )
+        .unwrap();
 
         let _ = std::fs::remove_file(temp_save);
     }
