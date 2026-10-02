@@ -1,0 +1,76 @@
+name: CIVITAS CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: civitas-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-required:
+    name: ci-required
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Rust toolchain
+        shell: bash
+        run: |
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Strict Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Compile workspace
+        run: cargo check --workspace --all-targets
+
+      - name: Debug tests
+        run: cargo test --workspace --all-targets
+
+      - name: Release tests
+        run: cargo test --release --workspace --all-targets
+
+      - name: Deterministic replay
+        run: cargo run --release -p civitas_cli -- replay --seed 42 --population 10000 --ticks 100
+
+      - name: Corrupted-save rejection
+        run: cargo test --release --test simulation_tests test_corrupted_save_rejection
+
+      - name: CLI snapshot roundtrip
+        shell: bash
+        run: |
+          cargo run --release -p civitas_cli -- generate \
+            --seed 42 \
+            --population 5000 \
+            --output target/test_contract.civ
+
+          cargo run --release -p civitas_cli -- validate-save \
+            --input target/test_contract.civ
+
+          rm -f target/test_contract.civ
+
+      - name: Tracked-worktree invariant
+        shell: bash
+        run: |
+          git diff --exit-code
