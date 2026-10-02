@@ -8,9 +8,27 @@ use civitas_core::sim::Simulation;
 
 #[test]
 fn measure_hotpaths() {
-    let mut log = File::create("../../evidence/hotpath_measurements.txt")
-        .or_else(|_| File::create("evidence/hotpath_measurements.txt"))
-        .expect("Failed to create evidence log");
+    let should_record = std::env::var("CIVITAS_RECORD_HOTPATHS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let (mut log, temp_log_path) = if should_record {
+        let f = File::create("../../evidence/hotpath_measurements.txt")
+            .or_else(|_| File::create("evidence/hotpath_measurements.txt"))
+            .expect("Failed to create evidence log");
+        (f, None)
+    } else {
+        let path = std::env::temp_dir().join(format!(
+            "civitas_hotpath_{}_{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let f = File::create(&path).expect("Failed to create temporary benchmark log");
+        (f, Some(path))
+    };
 
     writeln!(log, "=== CIVITAS-1M HOT PATH TIMING MEASUREMENTS ===").unwrap();
     writeln!(log, "Timestamp: {:?}", Instant::now()).unwrap();
@@ -45,7 +63,15 @@ fn measure_hotpaths() {
         .unwrap();
 
         // 3. Measure snapshot persistence save & load
-        let temp_save = std::env::temp_dir().join(format!("bench_save_{}.civ", n));
+        let temp_save = std::env::temp_dir().join(format!(
+            "bench_save_{}_{}_{}.civ",
+            std::process::id(),
+            n,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
         let start = Instant::now();
         save_to_file(&mut sim.world, 42, &temp_save).unwrap();
         let save_dur = start.elapsed();
@@ -67,5 +93,9 @@ fn measure_hotpaths() {
         .unwrap();
 
         let _ = std::fs::remove_file(temp_save);
+    }
+
+    if let Some(path) = temp_log_path {
+        let _ = std::fs::remove_file(path);
     }
 }
