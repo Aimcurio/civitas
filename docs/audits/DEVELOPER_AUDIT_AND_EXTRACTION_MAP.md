@@ -7,7 +7,7 @@ This audit was performed from a fresh, disinterested inspection of the repositor
 
 ## 1. PROVENANCE & ENVIRONMENT
 
-- **Repository Root**: `C:\Users\15103\.gemini\antigravity\scratch\civitas`
+- **Repository Root**: `.`
 - **Delivery Method**: In-place local Rust virtual workspace
 - **Revision / Commit**: `7b686a83b50559d77cd7bbdd6b55fb10407ee203` (branch `feature/civitas-1m-core`)
 - **Runtime Environment**:

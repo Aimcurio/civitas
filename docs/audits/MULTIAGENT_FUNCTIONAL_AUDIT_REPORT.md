@@ -13,7 +13,7 @@
 ## 0. Operator Identity Notice
 
 **Claim Tag**: `[VERIFIED]`  
-This audit was conducted from a clean, disinterested, evidence-driven inspection of the CIVITAS-1M codebase, documentation, automated test suites, benchmarks, and git worktree located on disk at `C:\Users\15103\.gemini\antigravity\scratch\civitas`. It does not rely on prior self-assessments, marketing assertions, README intent, agent-generated summaries, or unverified architecture diagrams.
+This audit was conducted from a clean, disinterested, evidence-driven inspection of the CIVITAS-1M codebase, documentation, automated test suites, benchmarks, and git worktree located on disk at `.`. It does not rely on prior self-assessments, marketing assertions, README intent, agent-generated summaries, or unverified architecture diagrams.
 
 ### Purpose of This Audit (7 Spec v2 Core Questions Answered)
 
@@ -41,7 +41,7 @@ This audit was conducted from a clean, disinterested, evidence-driven inspection
 ## 1. Target Identity & Scope
 
 ### Repository & Environment Identity
-- **Repository Root**: `C:\Users\15103\.gemini\antigravity\scratch\civitas` `[VERIFIED: Local filesystem]`
+- **Repository Root**: `.` `[VERIFIED: Local filesystem]`
 - **Revision / Commit**: `0915514c76e26c754c6abd288f5222dceec05d3d` `[VERIFIED: git rev-parse HEAD]`
 - **Branch**: `feature/civitas-1m-core` `[VERIFIED: git branch --show-current]`
 - **Worktree State**: Tracked worktree contains 3 modified tracked files (`crates/civitas_cli/src/main.rs`, `crates/civitas_core/tests/hotpath_measurements.rs`, `evidence/hotpath_measurements.txt` from benchmark harness runs) and untracked files (`.agents/`, `save_test.bin`, `MULTIAGENT_FUNCTIONAL_AUDIT_REPORT.md`) `[PARTIAL / DOCUMENTED: git status --short; worker_env_verify\handoff.md:380]`
