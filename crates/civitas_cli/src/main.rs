@@ -30,6 +30,10 @@ enum Commands {
         height: u32,
         #[arg(long, default_value_t = 8)]
         settlements: usize,
+        #[arg(long, default_value_t = 0)]
+        population: usize,
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
     /// Run headless simulation forward through time
     Run {
@@ -62,7 +66,7 @@ enum Commands {
     },
     /// Inspect and validate save file integrity and schema
     ValidateSave {
-        #[arg(long)]
+        #[arg(long, alias = "input")]
         file: PathBuf,
     },
 }
@@ -76,14 +80,16 @@ fn main() {
             width,
             height,
             settlements,
+            population,
+            output,
         } => {
             println!("=== CIVITAS-1M World Generation ===");
             println!(
-                "Seed: {}, Dimensions: {}x{}, Settlement Nodes: {}",
-                seed, width, height, settlements
+                "Seed: {}, Dimensions: {}x{}, Settlement Nodes: {}, Population: {}",
+                seed, width, height, settlements, population
             );
             let start = Instant::now();
-            let sim = Simulation::new(seed, width, height, settlements, 0);
+            let mut sim = Simulation::new(seed, width, height, settlements, population);
             let elapsed = start.elapsed();
             println!(
                 "World generated in {:.3} ms",
@@ -96,6 +102,13 @@ fn main() {
             );
             for (sid, pos) in &world_map.settlement_positions {
                 println!("  Node #{}: ({}, {})", sid.0, pos.0, pos.1);
+            }
+            if let Some(path) = output {
+                println!("Saving generated world snapshot to {:?}", path);
+                match save_to_file(&mut sim.world, seed, &path) {
+                    Ok(_) => println!("Save completed successfully with CRC32 integrity check."),
+                    Err(e) => eprintln!("Save failed: {}", e),
+                }
             }
         }
         Commands::Run {
