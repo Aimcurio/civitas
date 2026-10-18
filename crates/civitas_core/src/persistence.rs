@@ -176,12 +176,29 @@ pub fn save_to_file<P: AsRef<Path>>(
     let header_bytes = bincode::serialize(&header)?;
     let header_len = header_bytes.len() as u32;
 
-    let mut file = File::create(path)?;
-    file.write_all(SAVE_MAGIC)?;
-    file.write_all(&header_len.to_le_bytes())?;
-    file.write_all(&header_bytes)?;
-    file.write_all(&payload_bytes)?;
-    file.flush()?;
+    let path_ref = path.as_ref();
+    let tmp_path = path_ref.with_extension(format!("civ.tmp.{}", std::process::id()));
+
+    let write_res = (|| -> Result<(), std::io::Error> {
+        let mut file = File::create(&tmp_path)?;
+        file.write_all(SAVE_MAGIC)?;
+        file.write_all(&header_len.to_le_bytes())?;
+        file.write_all(&header_bytes)?;
+        file.write_all(&payload_bytes)?;
+        file.flush()?;
+        file.sync_all()?;
+        Ok(())
+    })();
+
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(SaveError::Io(e));
+    }
+
+    if let Err(e) = std::fs::rename(&tmp_path, path_ref) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(SaveError::Io(e));
+    }
 
     Ok(())
 }

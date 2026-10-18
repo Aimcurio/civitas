@@ -5,11 +5,12 @@ use crate::components::{
     OccupationProfile, PersonalFinances, PhysicalNeeds, SettlementRef,
 };
 use crate::events::{EventRing, SimEvent, SimEventType};
-use crate::household::HouseholdDirectory;
+use crate::household::{Household, HouseholdDirectory};
 use crate::settlement::SettlementDirectory;
+use crate::sim::CitizenIndex;
 use crate::types::{
-    CitizenId, DecisionTrace, Gender, HouseholdRole, MigrationStatus, OccupationType, ReasonCode,
-    SimClock,
+    CitizenId, DecisionTrace, Gender, HouseholdId, HouseholdRole, MigrationStatus, OccupationType,
+    ReasonCode, ResourceType, SettlementId, SimClock,
 };
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -19,16 +20,23 @@ pub fn demographics_aging_system(
     clock: Res<SimClock>,
     mut events: ResMut<EventRing>,
     mut settlements: ResMut<SettlementDirectory>,
+    mut households: ResMut<HouseholdDirectory>,
+    mut citizen_index: ResMut<CitizenIndex>,
     mut query: Query<(
         &mut CitizenMeta,
         &mut Demographics,
         &mut CausalAudit,
         &SettlementRef,
+        &HouseholdRef,
+        &OccupationProfile,
+        &mut PersonalFinances,
     )>,
 ) {
     let tick = clock.tick;
 
-    for (mut meta, mut demo, mut audit, settlement_ref) in query.iter_mut() {
+    for (mut meta, mut demo, mut audit, settlement_ref, hh_ref, occ_profile, mut finances) in
+        query.iter_mut()
+    {
         if !meta.alive {
             continue;
         }
@@ -49,6 +57,8 @@ pub fn demographics_aging_system(
 
             if roll < risk {
                 meta.alive = false;
+                citizen_index.mark_deceased(meta.id);
+
                 let trace = DecisionTrace::new(
                     ReasonCode::OldAgeSenescence,
                     tick,
@@ -60,9 +70,50 @@ pub fn demographics_aging_system(
 
                 if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
                     settlement.total_deaths += 1;
-                    if settlement.population > 0 {
-                        settlement.population -= 1;
+                    settlement.population = settlement.population.saturating_sub(1);
+                    settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
+                    if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation)
+                    {
+                        *count = count.saturating_sub(1);
                     }
+                }
+
+                let hid = hh_ref.household_id;
+                let mut dissolved = false;
+                let mut reclaimed_savings = 0.0;
+                let mut reclaimed_food = 0.0;
+                if let Some(hh) = households.get_mut(hid) {
+                    hh.remove_member(meta.id);
+                    if hh.is_empty() {
+                        dissolved = true;
+                        reclaimed_savings = hh.savings + finances.savings;
+                        reclaimed_food = hh.food_reserve;
+                        finances.savings = 0.0;
+                    }
+                }
+
+                if dissolved {
+                    households.remove(hid);
+                    if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
+                        settlement.treasury += reclaimed_savings;
+                        *settlement
+                            .inventories
+                            .entry(ResourceType::Food)
+                            .or_insert(0.0) += reclaimed_food as f64;
+                    }
+                    events.push(SimEvent {
+                        tick,
+                        event_type: SimEventType::HouseholdDissolved,
+                        entity: Some(meta.id),
+                        settlement: Some(settlement_ref.settlement_id),
+                        reason: DecisionTrace::new(
+                            ReasonCode::HouseholdDissolved,
+                            tick,
+                            0.0,
+                            0.0,
+                            hid.0,
+                        ),
+                    });
                 }
 
                 events.push(SimEvent {
@@ -84,6 +135,7 @@ pub fn reproduction_system(
     mut events: ResMut<EventRing>,
     mut households: ResMut<HouseholdDirectory>,
     mut settlements: ResMut<SettlementDirectory>,
+    mut citizen_index: ResMut<CitizenIndex>,
     mut query: Query<(
         &CitizenMeta,
         &mut Demographics,
@@ -143,58 +195,63 @@ pub fn reproduction_system(
                     meta.id.0 as u32,
                 );
 
-                commands.spawn((
-                    CitizenMeta {
-                        id: baby_id,
-                        gender: baby_gender,
-                        alive: true,
-                    },
-                    Demographics {
-                        age_years: 0,
-                        age_ticks: 0,
-                        health: 100,
-                        fertility_timer: 0,
-                    },
-                    HouseholdRef {
-                        household_id: hh_ref.household_id,
-                        role: HouseholdRole::Child,
-                    },
-                    SettlementRef {
-                        settlement_id: settlement_ref.settlement_id,
-                        district_id: 0,
-                    },
-                    OccupationProfile {
-                        occupation: OccupationType::Unemployed,
-                        skill_level: 0,
-                        experience: 0,
-                        productivity: 1.0,
-                    },
-                    PersonalFinances {
-                        savings: 0.0,
-                        last_income: 0.0,
-                        last_expense: 0.0,
-                    },
-                    PhysicalNeeds {
-                        satiety: 100,
-                        shelter: 100,
-                        comfort: 100,
-                    },
-                    MobilityProfile {
-                        status: MigrationStatus::Settled,
-                    },
-                    Kinship {
-                        spouse: None,
-                        parent_a: Some(meta.id),
-                        parent_b: kinship.spouse,
-                        children_count: 0,
-                    },
-                    CausalAudit {
-                        trace: trace.clone(),
-                    },
-                ));
+                let baby_entity = commands
+                    .spawn((
+                        CitizenMeta {
+                            id: baby_id,
+                            gender: baby_gender,
+                            alive: true,
+                        },
+                        Demographics {
+                            age_years: 0,
+                            age_ticks: 0,
+                            health: 100,
+                            fertility_timer: 0,
+                        },
+                        HouseholdRef {
+                            household_id: hh_ref.household_id,
+                            role: HouseholdRole::Child,
+                        },
+                        SettlementRef {
+                            settlement_id: settlement_ref.settlement_id,
+                            district_id: 0,
+                        },
+                        OccupationProfile {
+                            occupation: OccupationType::Unemployed,
+                            skill_level: 0,
+                            experience: 0,
+                            productivity: 1.0,
+                        },
+                        PersonalFinances {
+                            savings: 0.0,
+                            last_income: 0.0,
+                            last_expense: 0.0,
+                        },
+                        PhysicalNeeds {
+                            satiety: 100,
+                            shelter: 100,
+                            comfort: 100,
+                        },
+                        MobilityProfile {
+                            status: MigrationStatus::Settled,
+                        },
+                        Kinship {
+                            spouse: None,
+                            parent_a: Some(meta.id),
+                            parent_b: kinship.spouse,
+                            children_count: 0,
+                        },
+                        CausalAudit {
+                            trace: trace.clone(),
+                        },
+                    ))
+                    .id();
+
+                citizen_index.insert_active(baby_id, baby_entity);
 
                 if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
                     settlement.population += 1;
+                    settlement.occupied_housing += 1;
                     settlement.total_births += 1;
                 }
 
@@ -205,6 +262,140 @@ pub fn reproduction_system(
                     settlement: Some(settlement_ref.settlement_id),
                     reason: trace,
                 });
+            }
+        }
+    }
+}
+
+pub fn marriage_system(
+    clock: Res<SimClock>,
+    mut events: ResMut<EventRing>,
+    mut households: ResMut<HouseholdDirectory>,
+    mut query: Query<(
+        &CitizenMeta,
+        &Demographics,
+        &mut Kinship,
+        &mut HouseholdRef,
+        &SettlementRef,
+        &MobilityProfile,
+        &mut PersonalFinances,
+    )>,
+) {
+    let tick = clock.tick;
+    if tick % 30 != 0 {
+        return;
+    }
+
+    // Partition eligible unmarried candidates by settlement
+    let mut females_by_settlement: std::collections::BTreeMap<SettlementId, Vec<CitizenId>> =
+        std::collections::BTreeMap::new();
+    let mut males_by_settlement: std::collections::BTreeMap<SettlementId, Vec<CitizenId>> =
+        std::collections::BTreeMap::new();
+
+    for (meta, demo, kinship, _, settlement_ref, mobility, _) in query.iter() {
+        if !meta.alive || mobility.status != MigrationStatus::Settled {
+            continue;
+        }
+        if demo.age_years < 18 || demo.age_years > 55 || kinship.spouse.is_some() {
+            continue;
+        }
+        match meta.gender {
+            Gender::Female => {
+                females_by_settlement
+                    .entry(settlement_ref.settlement_id)
+                    .or_default()
+                    .push(meta.id);
+            }
+            Gender::Male => {
+                males_by_settlement
+                    .entry(settlement_ref.settlement_id)
+                    .or_default()
+                    .push(meta.id);
+            }
+        }
+    }
+
+    // Match pairs deterministically
+    let mut pairings: std::collections::BTreeMap<CitizenId, (CitizenId, HouseholdId, SettlementId)> =
+        std::collections::BTreeMap::new();
+
+    for (sid, f_list) in females_by_settlement {
+        if let Some(m_list) = males_by_settlement.get_mut(&sid) {
+            let pair_count = f_list.len().min(m_list.len()).min(10);
+            for i in 0..pair_count {
+                let f_id = f_list[i];
+                let m_id = m_list[i];
+
+                let new_hh_id = households.allocate_id();
+                let mut new_hh = Household::new_with_reserves(new_hh_id, sid, m_id, 60.0, 15.0);
+                new_hh.add_member(f_id);
+                households.insert(new_hh);
+
+                pairings.insert(f_id, (m_id, new_hh_id, sid));
+                pairings.insert(m_id, (f_id, new_hh_id, sid));
+
+                let trace_f = DecisionTrace::new(
+                    ReasonCode::HouseholdFormedMarriage,
+                    tick,
+                    0.0,
+                    0.0,
+                    m_id.0 as u32,
+                );
+                let trace_m = DecisionTrace::new(
+                    ReasonCode::HouseholdFormedMarriage,
+                    tick,
+                    0.0,
+                    0.0,
+                    f_id.0 as u32,
+                );
+
+                events.push(SimEvent {
+                    tick,
+                    event_type: SimEventType::Marriage,
+                    entity: Some(f_id),
+                    settlement: Some(sid),
+                    reason: trace_f,
+                });
+                events.push(SimEvent {
+                    tick,
+                    event_type: SimEventType::Marriage,
+                    entity: Some(m_id),
+                    settlement: Some(sid),
+                    reason: trace_m,
+                });
+            }
+        }
+    }
+
+    if pairings.is_empty() {
+        return;
+    }
+
+    // Apply pairing updates to entity components
+    let mut old_hhs_to_check = std::collections::BTreeSet::new();
+
+    for (meta, _, mut kinship, mut hh_ref, _, _, _) in query.iter_mut() {
+        if let Some(&(partner_id, new_hid, _)) = pairings.get(&meta.id) {
+            kinship.spouse = Some(partner_id);
+            old_hhs_to_check.insert(hh_ref.household_id);
+
+            hh_ref.household_id = new_hid;
+            hh_ref.role = if meta.gender == Gender::Male {
+                HouseholdRole::Head
+            } else {
+                HouseholdRole::Spouse
+            };
+        }
+    }
+
+    // Detach from old households and dissolve if empty
+    for old_hid in old_hhs_to_check {
+        if let Some(hh) = households.get_mut(old_hid) {
+            for cid in pairings.keys() {
+                hh.remove_member(*cid);
+            }
+            if hh.is_empty() {
+                households.remove(old_hid);
             }
         }
     }

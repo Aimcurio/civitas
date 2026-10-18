@@ -83,6 +83,19 @@ fn main() {
             population,
             output,
         } => {
+            if width < 16 || height < 16 || width > 2048 || height > 2048 {
+                eprintln!("Error: Map dimensions must be between 16x16 and 2048x2048.");
+                std::process::exit(1);
+            }
+            if settlements == 0 || settlements > 256 {
+                eprintln!("Error: Settlement count must be between 1 and 256.");
+                std::process::exit(1);
+            }
+            if population > 2_000_000 {
+                eprintln!("Error: Population {} exceeds maximum supported frontier of 2,000,000.", population);
+                std::process::exit(1);
+            }
+
             println!("=== CIVITAS-1M World Generation ===");
             println!(
                 "Seed: {}, Dimensions: {}x{}, Settlement Nodes: {}, Population: {}",
@@ -117,6 +130,15 @@ fn main() {
             ticks,
             save_out,
         } => {
+            if population == 0 || population > 2_000_000 {
+                eprintln!("Error: Population must be between 1 and 2,000,000 (requested: {}).", population);
+                std::process::exit(1);
+            }
+            if ticks == 0 {
+                eprintln!("Error: Simulation ticks must be at least 1.");
+                std::process::exit(1);
+            }
+
             println!("=== CIVITAS-1M Simulation Run ===");
             println!("Seed: {}, Citizens: {}, Ticks: {}", seed, population, ticks);
             let init_start = Instant::now();
@@ -171,6 +193,15 @@ fn main() {
             ticks,
             seed,
         } => {
+            if population == 0 || population > 2_000_000 {
+                eprintln!("Error: Benchmark population must be between 1 and 2,000,000 (requested: {}).", population);
+                std::process::exit(1);
+            }
+            if ticks == 0 {
+                eprintln!("Error: Benchmark ticks must be at least 1.");
+                std::process::exit(1);
+            }
+
             println!("============================================================");
             println!("             CIVITAS-1M PERFORMANCE BENCHMARK               ");
             println!("============================================================");
@@ -232,6 +263,14 @@ fn main() {
             population,
             ticks,
         } => {
+            if population == 0 || population > 2_000_000 {
+                eprintln!("Error: Replay population must be between 1 and 2,000,000 (requested: {}).", population);
+                std::process::exit(1);
+            }
+            if ticks == 0 {
+                eprintln!("Error: Replay ticks must be at least 1.");
+                std::process::exit(1);
+            }
             println!("=== CIVITAS-1M Deterministic Replay Check ===");
             println!("Phase 1: Generating baseline authoritative trace...");
             let mut sim1 = Simulation::new(seed, 128, 128, 8, population);

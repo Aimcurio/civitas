@@ -12,7 +12,9 @@ use crate::invariants::verify_invariants;
 use crate::persistence::SimulationSnapshot;
 use crate::replay::compute_authoritative_state_hash;
 use crate::settlement::{Settlement, SettlementDirectory};
-use crate::systems::demographics::{demographics_aging_system, reproduction_system, NextCitizenId};
+use crate::systems::demographics::{
+    demographics_aging_system, marriage_system, reproduction_system, NextCitizenId,
+};
 use crate::systems::labor::labor_market_system;
 use crate::systems::market::{household_consumption_system, market_price_update_system};
 use crate::systems::migration::{migration_evaluation_system, migration_transit_system};
@@ -23,6 +25,39 @@ use crate::types::{
     ReasonCode, SimClock,
 };
 use crate::world::WorldMap;
+
+#[derive(bevy_ecs::system::Resource, Debug, Clone, Default)]
+pub struct CitizenIndex {
+    pub active: std::collections::BTreeMap<CitizenId, Entity>,
+    pub historical: std::collections::BTreeMap<CitizenId, Entity>,
+}
+
+impl CitizenIndex {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert_active(&mut self, id: CitizenId, entity: Entity) {
+        self.active.insert(id, entity);
+    }
+
+    pub fn mark_deceased(&mut self, id: CitizenId) {
+        if let Some(entity) = self.active.remove(&id) {
+            self.historical.insert(id, entity);
+        }
+    }
+
+    pub fn get(&self, id: CitizenId) -> Option<Entity> {
+        self.active
+            .get(&id)
+            .copied()
+            .or_else(|| self.historical.get(&id).copied())
+    }
+
+    pub fn get_active(&self, id: CitizenId) -> Option<Entity> {
+        self.active.get(&id).copied()
+    }
+}
 
 pub struct Simulation {
     pub world: World,
@@ -63,6 +98,7 @@ impl Simulation {
         let households = HouseholdDirectory::new();
         let events = EventRing::new(10_000);
         let clock = SimClock::new();
+        let mut citizen_index = CitizenIndex::new();
 
         // Register Resources
         world.insert_resource(clock);
@@ -132,53 +168,57 @@ impl Simulation {
             let initial_savings = rng.gen_range(10.0..50.0);
             let trace = DecisionTrace::new(ReasonCode::InitialSpawn, 0, 0.0, 0.0, 0);
 
-            world.spawn((
-                CitizenMeta {
-                    id: cid,
-                    gender,
-                    alive: true,
-                },
-                Demographics {
-                    age_years: initial_age,
-                    age_ticks: 0,
-                    health: 100,
-                    fertility_timer: 0,
-                },
-                HouseholdRef {
-                    household_id: assigned_hh_id,
-                    role,
-                },
-                SettlementRef {
-                    settlement_id: sid,
-                    district_id: 0,
-                },
-                OccupationProfile {
-                    occupation: occ,
-                    skill_level: 1,
-                    experience: 0,
-                    productivity: 1.1,
-                },
-                PersonalFinances {
-                    savings: initial_savings,
-                    last_income: 3.0,
-                    last_expense: 0.0,
-                },
-                PhysicalNeeds {
-                    satiety: 100,
-                    shelter: 100,
-                    comfort: 100,
-                },
-                MobilityProfile {
-                    status: MigrationStatus::Settled,
-                },
-                Kinship {
-                    spouse: None,
-                    parent_a: None,
-                    parent_b: None,
-                    children_count: 0,
-                },
-                CausalAudit { trace },
-            ));
+            let entity = world
+                .spawn((
+                    CitizenMeta {
+                        id: cid,
+                        gender,
+                        alive: true,
+                    },
+                    Demographics {
+                        age_years: initial_age,
+                        age_ticks: 0,
+                        health: 100,
+                        fertility_timer: 0,
+                    },
+                    HouseholdRef {
+                        household_id: assigned_hh_id,
+                        role,
+                    },
+                    SettlementRef {
+                        settlement_id: sid,
+                        district_id: 0,
+                    },
+                    OccupationProfile {
+                        occupation: occ,
+                        skill_level: 1,
+                        experience: 0,
+                        productivity: 1.1,
+                    },
+                    PersonalFinances {
+                        savings: initial_savings,
+                        last_income: 3.0,
+                        last_expense: 0.0,
+                    },
+                    PhysicalNeeds {
+                        satiety: 100,
+                        shelter: 100,
+                        comfort: 100,
+                    },
+                    MobilityProfile {
+                        status: MigrationStatus::Settled,
+                    },
+                    Kinship {
+                        spouse: None,
+                        parent_a: None,
+                        parent_b: None,
+                        children_count: 0,
+                    },
+                    CausalAudit { trace },
+                ))
+                .id();
+
+            citizen_index.insert_active(cid, entity);
 
             if let Some(settlement) = world.resource_mut::<SettlementDirectory>().get_mut(sid) {
                 settlement.population += 1;
@@ -187,6 +227,7 @@ impl Simulation {
             }
         }
 
+        world.insert_resource(citizen_index);
         world.resource_mut::<HouseholdDirectory>().next_id = current_hh_id.0 + 1;
 
         // Initialize Bevy Schedules
@@ -206,7 +247,11 @@ impl Simulation {
         ));
 
         let mut monthly = Schedule::default();
-        monthly.add_systems((migration_evaluation_system, reproduction_system));
+        monthly.add_systems((
+            migration_evaluation_system,
+            reproduction_system,
+            marriage_system,
+        ));
 
         Self {
             world,
@@ -228,20 +273,32 @@ impl Simulation {
         world.insert_resource(snapshot.events);
         world.insert_resource(NextCitizenId(snapshot.next_citizen_id));
 
+        let mut citizen_index = CitizenIndex::new();
         for c in snapshot.citizens {
-            world.spawn((
-                c.meta,
-                c.demographics,
-                c.household_ref,
-                c.settlement_ref,
-                c.occupation,
-                c.finances,
-                c.needs,
-                c.mobility,
-                c.kinship,
-                c.causal_audit,
-            ));
+            let cid = c.meta.id;
+            let alive = c.meta.alive;
+            let entity = world
+                .spawn((
+                    c.meta,
+                    c.demographics,
+                    c.household_ref,
+                    c.settlement_ref,
+                    c.occupation,
+                    c.finances,
+                    c.needs,
+                    c.mobility,
+                    c.kinship,
+                    c.causal_audit,
+                ))
+                .id();
+
+            if alive {
+                citizen_index.insert_active(cid, entity);
+            } else {
+                citizen_index.historical.insert(cid, entity);
+            }
         }
+        world.insert_resource(citizen_index);
 
         let mut daily = Schedule::default();
         daily.add_systems((
@@ -259,7 +316,11 @@ impl Simulation {
         ));
 
         let mut monthly = Schedule::default();
-        monthly.add_systems((migration_evaluation_system, reproduction_system));
+        monthly.add_systems((
+            migration_evaluation_system,
+            reproduction_system,
+            marriage_system,
+        ));
 
         Self {
             world,
@@ -269,6 +330,12 @@ impl Simulation {
             seed: snapshot.seed,
             initial_population: 0,
         }
+    }
+
+    pub fn get_citizen_entity(&self, id: CitizenId) -> Option<Entity> {
+        self.world
+            .get_resource::<CitizenIndex>()
+            .and_then(|idx| idx.get(id))
     }
 
     pub fn step(&mut self) -> u64 {
@@ -315,7 +382,12 @@ impl Simulation {
         compute_authoritative_state_hash(&mut self.world)
     }
 
+    pub fn events(&self) -> &EventRing {
+        self.world.resource::<EventRing>()
+    }
+
     pub fn check_invariants(&mut self) -> Result<(), Vec<String>> {
         verify_invariants(&mut self.world)
     }
 }
+

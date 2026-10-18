@@ -30,6 +30,25 @@ impl Household {
         }
     }
 
+    pub fn new_with_reserves(
+        id: HouseholdId,
+        settlement_id: SettlementId,
+        head: CitizenId,
+        savings: f64,
+        food_reserve: f32,
+    ) -> Self {
+        Self {
+            id,
+            settlement_id,
+            head,
+            members: vec![head],
+            savings: savings.max(0.0),
+            food_reserve: food_reserve.max(0.0),
+            housing_quality: 100,
+            migration_pressure: 0.0,
+        }
+    }
+
     pub fn add_member(&mut self, citizen_id: CitizenId) {
         if !self.members.contains(&citizen_id) {
             self.members.push(citizen_id);
