@@ -145,7 +145,8 @@ impl DecisionTrace {
                 self.primary_metric, self.secondary_metric
             ),
             ReasonCode::JobLaidOff => {
-                "Displaced from previous occupation due to production contraction or low treasury".to_string()
+                "Displaced from previous occupation due to production contraction or low treasury"
+                    .to_string()
             }
             ReasonCode::HouseholdFormedMarriage => format!(
                 "Established independent household with partner #{} at tick {}",

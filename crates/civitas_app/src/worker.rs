@@ -287,7 +287,11 @@ fn run_worker_loop(
                     }
                     SimCommand::Save(path) => {
                         let seed = sim.seed;
-                        match save_to_file(&mut sim.world, seed, path.to_str().unwrap_or("save.civ")) {
+                        match save_to_file(
+                            &mut sim.world,
+                            seed,
+                            path.to_str().unwrap_or("save.civ"),
+                        ) {
                             Ok(_) => {
                                 let _ = resp_tx.send(WorkerResponse::StatusMessage(format!(
                                     "Saved snapshot to {:?}",
@@ -311,7 +315,8 @@ fn run_worker_loop(
                                     "Loaded snapshot from {:?}",
                                     path
                                 )));
-                                let snap = build_snapshot(&mut sim, is_running, speed, measured_tps);
+                                let snap =
+                                    build_snapshot(&mut sim, is_running, speed, measured_tps);
                                 if let Ok(mut lock) = shared_snapshot.lock() {
                                     *lock = snap;
                                 }

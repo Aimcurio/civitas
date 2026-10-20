@@ -16,6 +16,7 @@ use crate::types::{
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct NextCitizenId(pub u64);
 
+#[allow(clippy::type_complexity)]
 pub fn demographics_aging_system(
     clock: Res<SimClock>,
     mut events: ResMut<EventRing>,
@@ -35,8 +36,16 @@ pub fn demographics_aging_system(
 ) {
     let tick = clock.tick;
 
-    for (mut meta, mut demo, mut audit, settlement_ref, hh_ref, occ_profile, mut finances, mobility) in
-        query.iter_mut()
+    for (
+        mut meta,
+        mut demo,
+        mut audit,
+        settlement_ref,
+        hh_ref,
+        occ_profile,
+        mut finances,
+        mobility,
+    ) in query.iter_mut()
     {
         if !meta.alive {
             continue;
@@ -75,7 +84,8 @@ pub fn demographics_aging_system(
                     if is_settled {
                         settlement.population = settlement.population.saturating_sub(1);
                         settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
-                        if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation)
+                        if let Some(count) =
+                            settlement.job_headcounts.get_mut(&occ_profile.occupation)
                         {
                             *count = count.saturating_sub(1);
                         }
@@ -132,6 +142,7 @@ pub fn demographics_aging_system(
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn reproduction_system(
     clock: Res<SimClock>,
     mut commands: Commands,
@@ -152,7 +163,10 @@ pub fn reproduction_system(
     let tick = clock.tick;
 
     for (meta, mut demo, hh_ref, settlement_ref, mut kinship, mobility) in query.iter_mut() {
-        if !meta.alive || meta.gender != Gender::Female || mobility.status != MigrationStatus::Settled {
+        if !meta.alive
+            || meta.gender != Gender::Female
+            || mobility.status != MigrationStatus::Settled
+        {
             continue;
         }
 
@@ -287,7 +301,7 @@ pub fn marriage_system(
     )>,
 ) {
     let tick = clock.tick;
-    if tick % 30 != 0 {
+    if !tick.is_multiple_of(30) {
         return;
     }
 
@@ -321,8 +335,10 @@ pub fn marriage_system(
     }
 
     // Match pairs deterministically
-    let mut pairings: std::collections::BTreeMap<CitizenId, (CitizenId, HouseholdId, SettlementId)> =
-        std::collections::BTreeMap::new();
+    let mut pairings: std::collections::BTreeMap<
+        CitizenId,
+        (CitizenId, HouseholdId, SettlementId),
+    > = std::collections::BTreeMap::new();
 
     for (sid, f_list) in females_by_settlement {
         if let Some(m_list) = males_by_settlement.get_mut(&sid) {

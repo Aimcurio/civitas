@@ -266,5 +266,8 @@ fn test_worker_world_generation_and_invariants() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    assert!(post_gen_inv_ok, "Did not receive post-generation invariant check");
+    assert!(
+        post_gen_inv_ok,
+        "Did not receive post-generation invariant check"
+    );
 }

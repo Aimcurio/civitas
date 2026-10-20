@@ -390,4 +390,3 @@ impl Simulation {
         verify_invariants(&mut self.world)
     }
 }
-

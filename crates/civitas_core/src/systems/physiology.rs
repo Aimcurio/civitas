@@ -10,6 +10,7 @@ use crate::settlement::SettlementDirectory;
 use crate::sim::CitizenIndex;
 use crate::types::{DecisionTrace, MigrationStatus, ReasonCode, ResourceType, SimClock};
 
+#[allow(clippy::type_complexity)]
 pub fn physiology_system(
     clock: Res<SimClock>,
     mut events: ResMut<EventRing>,
@@ -94,7 +95,8 @@ pub fn physiology_system(
                 if is_settled {
                     settlement.population = settlement.population.saturating_sub(1);
                     settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
-                    if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation) {
+                    if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation)
+                    {
                         *count = count.saturating_sub(1);
                     }
                 }

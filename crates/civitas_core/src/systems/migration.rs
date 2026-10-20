@@ -77,6 +77,7 @@ pub fn migration_transit_system(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn migration_evaluation_system(
     clock: Res<SimClock>,
     world_map: Res<WorldMap>,

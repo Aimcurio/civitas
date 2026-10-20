@@ -10,9 +10,7 @@ use egui_plot::{Line, Plot, PlotPoints};
 use civitas_core::types::{
     Biome, CitizenId, HouseholdId, OccupationType, ResourceType, SettlementId,
 };
-use worker::{
-    CitizenDetailView, PresentationSnapshot, SimCommand, WorkerHandle, WorkerResponse,
-};
+use worker::{CitizenDetailView, PresentationSnapshot, SimCommand, WorkerHandle, WorkerResponse};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum ViewTab {
@@ -221,7 +219,8 @@ impl CivitasApp {
 
         self.history_ticks.push_back(tick as f64);
         self.history_living_pop.push_back(living);
-        self.history_avg_food_price.push_back(total_food_price / count);
+        self.history_avg_food_price
+            .push_back(total_food_price / count);
         self.history_avg_wage.push_back(total_wage / count);
 
         // Cap at 300 points using O(1) pop_front
@@ -333,9 +332,9 @@ impl eframe::App for CivitasApp {
                 // Simulation Controls
                 if ui
                     .button(if self.snapshot.is_running {
-                        "â¸ Pause (Space)"
+                        "Pause (Space)"
                     } else {
-                        "â–¶ Play (Space)"
+                        "Play (Space)"
                     })
                     .clicked()
                 {
@@ -346,7 +345,7 @@ impl eframe::App for CivitasApp {
                     }
                 }
 
-                if ui.button("â­ Step 1 (.)").clicked() {
+                if ui.button("Step 1 (.)").clicked() {
                     self.worker.send_command(SimCommand::Step(1));
                 }
 
@@ -383,32 +382,32 @@ impl eframe::App for CivitasApp {
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::WorldMap,
-                    "ðŸ—º World Map (Ctrl+1)",
+                    "World Map (Ctrl+1)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::SettlementInspector,
-                    "ðŸ› Settlements (Ctrl+2)",
+                    "Settlements (Ctrl+2)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::CitizenInspector,
-                    "ðŸ‘¤ Citizen Inspector (Ctrl+3)",
+                    "Citizen Inspector (Ctrl+3)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::HouseholdInspector,
-                    "ðŸ  Households (Ctrl+4)",
+                    "Households (Ctrl+4)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::Analytics,
-                    "ðŸ“ˆ Analytics & Charts (Ctrl+5)",
+                    "Analytics & Charts (Ctrl+5)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::EventLog,
-                    "ðŸ“œ Event Log (Ctrl+6)",
+                    "Event Log (Ctrl+6)",
                 );
             });
         });
@@ -435,7 +434,7 @@ impl eframe::App for CivitasApp {
                 ui.label("Initial Population:");
                 ui.add(egui::Slider::new(&mut self.new_population, 100..=50_000).logarithmic(true));
 
-                if ui.button("ðŸ”„ Generate New World").clicked() {
+                if ui.button("Generate New World").clicked() {
                     self.worker.send_command(SimCommand::GenerateWorld {
                         seed: self.new_seed,
                         population: self.new_population,
@@ -457,12 +456,12 @@ impl eframe::App for CivitasApp {
                 });
 
                 ui.horizontal(|ui| {
-                    if ui.button("ðŸ’¾ Save State").clicked() {
+                    if ui.button("Save State").clicked() {
                         let path = PathBuf::from(&self.save_path_text);
                         self.worker.send_command(SimCommand::Save(path));
                     }
 
-                    if ui.button("ðŸ“‚ Load State").clicked() {
+                    if ui.button("Load State").clicked() {
                         let path = PathBuf::from(&self.save_path_text);
                         self.worker.send_command(SimCommand::Load(path));
                         self.history_ticks.clear();
@@ -588,7 +587,11 @@ impl CivitasApp {
                 let cur_pos = Pos2::new(po.x + (pd.x - po.x) * t, po.y + (pd.y - po.y) * t);
 
                 // Bright glowing migrant dot
-                painter.circle_filled(cur_pos, 4.0 * self.camera_zoom.clamp(0.8, 2.0), Color32::from_rgb(255, 220, 50));
+                painter.circle_filled(
+                    cur_pos,
+                    4.0 * self.camera_zoom.clamp(0.8, 2.0),
+                    Color32::from_rgb(255, 220, 50),
+                );
                 painter.circle_stroke(
                     cur_pos,
                     5.0 * self.camera_zoom.clamp(0.8, 2.0),
@@ -654,7 +657,7 @@ impl CivitasApp {
         };
 
         ui.horizontal(|ui| {
-            ui.label(format!("ðŸ› Name: {}", settlement.name));
+            ui.label(format!("Name: {}", settlement.name));
             ui.label(format!("ID: #{}", settlement.id.0));
             ui.label(format!("Coordinates: ({}, {})", settlement.x, settlement.y));
         });
@@ -670,14 +673,26 @@ impl CivitasApp {
                     "Housing Utilization: {:.1}%",
                     settlement.housing_utilization() * 100.0
                 ));
-                ui.label(format!("Total Historical Births: {}", settlement.total_births));
-                ui.label(format!("Total Historical Deaths: {}", settlement.total_deaths));
-                ui.label(format!("Net Migration Balance: {:+}", settlement.net_migration));
+                ui.label(format!(
+                    "Total Historical Births: {}",
+                    settlement.total_births
+                ));
+                ui.label(format!(
+                    "Total Historical Deaths: {}",
+                    settlement.total_deaths
+                ));
+                ui.label(format!(
+                    "Net Migration Balance: {:+}",
+                    settlement.net_migration
+                ));
             });
 
             cols[1].group(|ui| {
                 ui.heading("Economy & Treasury");
-                ui.label(format!("Municipal Treasury: {:.1} coins", settlement.treasury));
+                ui.label(format!(
+                    "Municipal Treasury: {:.1} coins",
+                    settlement.treasury
+                ));
                 ui.label(format!(
                     "Prevailing Average Wage: {:.2} coins/tick",
                     settlement.average_wage()
@@ -685,11 +700,7 @@ impl CivitasApp {
                 ui.separator();
                 ui.label("Market Prices (Coins):");
                 for res in ResourceType::ALL {
-                    ui.label(format!(
-                        "  {:?}: {:.2}",
-                        res,
-                        settlement.get_price(res)
-                    ));
+                    ui.label(format!("  {:?}: {:.2}", res, settlement.get_price(res)));
                 }
             });
 
@@ -716,7 +727,9 @@ impl CivitasApp {
         ui.horizontal(|ui| {
             ui.label("Search Citizen ID:");
             let resp = ui.text_edit_singleline(&mut self.citizen_search_text);
-            if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) || ui.button("Inspect").clicked() {
+            if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
+                || ui.button("Inspect").clicked()
+            {
                 if let Ok(id) = self.citizen_search_text.trim().parse::<u64>() {
                     self.request_citizen_details(CitizenId(id));
                 }
@@ -743,9 +756,9 @@ impl CivitasApp {
                     ui.label(format!(
                         "Vital Status: {}",
                         if m.alive {
-                            "ðŸŸ¢ Alive & Active"
+                            "Alive & Active"
                         } else {
-                            "ðŸ”´ Deceased (Historical Record)"
+                            "Deceased (Historical Record)"
                         }
                     ));
                     ui.label(format!("Gender: {:?}", m.gender));
@@ -852,7 +865,10 @@ impl CivitasApp {
         if let Some(hh) = h_dir.get(target_hh_id) {
             ui.group(|ui| {
                 ui.heading(format!("Household #{}", hh.id.0));
-                ui.label(format!("Settlement Location: Settlement #{}", hh.settlement_id.0));
+                ui.label(format!(
+                    "Settlement Location: Settlement #{}",
+                    hh.settlement_id.0
+                ));
                 ui.horizontal(|ui| {
                     ui.label(format!("Head Citizen: #{}", hh.head.0));
                     if ui.button("Inspect Head").clicked() {
@@ -876,7 +892,10 @@ impl CivitasApp {
                 }
             });
         } else {
-            ui.label(format!("Household #{} not found (may have been dissolved).", target_hh_id.0));
+            ui.label(format!(
+                "Household #{} not found (may have been dissolved).",
+                target_hh_id.0
+            ));
         }
 
         ui.separator();
@@ -887,28 +906,31 @@ impl CivitasApp {
         let max_pages = (total_hh / items_per_page).max(1);
 
         ui.horizontal(|ui| {
-            if ui.button("â—€ Prev Page").clicked() && self.household_page > 0 {
+            if ui.button("Prev Page").clicked() && self.household_page > 0 {
                 self.household_page -= 1;
             }
             ui.label(format!("Page {} of {}", self.household_page + 1, max_pages));
-            if ui.button("Next Page â–¶").clicked() && (self.household_page + 1) < max_pages {
+            if ui.button("Next Page").clicked() && (self.household_page + 1) < max_pages {
                 self.household_page += 1;
             }
         });
 
-        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-            let start = self.household_page * items_per_page;
-            for (hid, hh) in h_dir.households.iter().skip(start).take(items_per_page) {
-                let is_sel = self.selected_household == Some(*hid);
-                let label = format!(
-                    "Household #{} â€” Settlement #{} â€” {} members â€” {:.1} coins â€” {:.1} food",
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                let start = self.household_page * items_per_page;
+                for (hid, hh) in h_dir.households.iter().skip(start).take(items_per_page) {
+                    let is_sel = self.selected_household == Some(*hid);
+                    let label =
+                        format!(
+                    "Household #{} - Settlement #{} - {} members - {:.1} coins - {:.1} food",
                     hid.0, hh.settlement_id.0, hh.members.len(), hh.savings, hh.food_reserve
                 );
-                if ui.selectable_label(is_sel, label).clicked() {
-                    self.selected_household = Some(*hid);
+                    if ui.selectable_label(is_sel, label).clicked() {
+                        self.selected_household = Some(*hid);
+                    }
                 }
-            }
-        });
+            });
     }
 
     fn render_analytics(&mut self, ui: &mut egui::Ui) {
@@ -1010,7 +1032,7 @@ impl CivitasApp {
                     if let Some(sid) = event.settlement {
                         ui.label(format!("at Settlement #{}", sid.0));
                     }
-                    ui.label(format!("â€” {}", event.reason.to_human_explanation()));
+                    ui.label(format!("- {}", event.reason.to_human_explanation()));
                 });
             }
         });
