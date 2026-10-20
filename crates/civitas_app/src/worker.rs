@@ -12,7 +12,7 @@ use civitas_core::events::{EventRing, SimEvent};
 use civitas_core::household::HouseholdDirectory;
 use civitas_core::invariants::verify_invariants;
 use civitas_core::persistence::{load_from_file, save_to_file};
-use civitas_core::settlement::SettlementDirectory;
+use civitas_core::settlement::{SettlementDirectory, SettlementPolicy};
 use civitas_core::sim::Simulation;
 use civitas_core::types::{CitizenId, MigrationStatus, SettlementId, SimClock};
 use civitas_core::world::WorldMap;
@@ -25,9 +25,19 @@ pub enum SimCommand {
     SetSpeed(u32),
     Save(PathBuf),
     Load(PathBuf),
-    GenerateWorld { seed: u64, population: usize },
+    GenerateWorld {
+        seed: u64,
+        population: usize,
+    },
     VerifyInvariants,
     RequestCitizenDetails(CitizenId),
+    SetSettlementPolicy {
+        settlement_id: SettlementId,
+        policy: SettlementPolicy,
+    },
+    CommissionHousing {
+        settlement_id: SettlementId,
+    },
     Shutdown,
 }
 
@@ -348,6 +358,60 @@ fn run_worker_loop(
                     SimCommand::RequestCitizenDetails(cid) => {
                         let details = query_citizen_details(&sim, cid);
                         let _ = resp_tx.send(WorkerResponse::CitizenDetails(details));
+                    }
+                    SimCommand::SetSettlementPolicy {
+                        settlement_id,
+                        policy,
+                    } => {
+                        if let Some(mut settlements) =
+                            sim.world.get_resource_mut::<SettlementDirectory>()
+                        {
+                            if let Some(s) = settlements.get_mut(settlement_id) {
+                                s.set_policy(policy.clone());
+                                let _ = resp_tx.send(WorkerResponse::StatusMessage(format!(
+                                    "Settlement #{} policy updated: Tax {:.0}%, Relief {}, Wage {:+.0}%",
+                                    settlement_id.0,
+                                    policy.tax_rate * 100.0,
+                                    if policy.emergency_relief { "ON" } else { "OFF" },
+                                    policy.wage_bonus * 100.0
+                                )));
+                            }
+                        }
+                        let snap = build_snapshot(&mut sim, is_running, speed, measured_tps);
+                        if let Ok(mut lock) = shared_snapshot.lock() {
+                            *lock = snap;
+                        }
+                    }
+                    SimCommand::CommissionHousing { settlement_id } => {
+                        let res = if let Some(mut settlements) =
+                            sim.world.get_resource_mut::<SettlementDirectory>()
+                        {
+                            if let Some(s) = settlements.get_mut(settlement_id) {
+                                s.commission_housing_expansion()
+                            } else {
+                                Err("Settlement not found")
+                            }
+                        } else {
+                            Err("Settlement directory unavailable")
+                        };
+                        match res {
+                            Ok(()) => {
+                                let _ = resp_tx.send(WorkerResponse::StatusMessage(format!(
+                                    "Housing expanded at Settlement #{} (+25 capacity)",
+                                    settlement_id.0
+                                )));
+                            }
+                            Err(err) => {
+                                let _ = resp_tx.send(WorkerResponse::StatusMessage(format!(
+                                    "Cannot expand housing: {}",
+                                    err
+                                )));
+                            }
+                        }
+                        let snap = build_snapshot(&mut sim, is_running, speed, measured_tps);
+                        if let Ok(mut lock) = shared_snapshot.lock() {
+                            *lock = snap;
+                        }
                     }
                     SimCommand::Shutdown => {
                         break 'worker;

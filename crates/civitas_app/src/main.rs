@@ -7,6 +7,8 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, Key, Pos2, Rect, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 
+use civitas_core::household::Household;
+use civitas_core::settlement::SettlementPolicy;
 use civitas_core::types::{
     Biome, CitizenId, HouseholdId, OccupationType, ResourceType, SettlementId,
 };
@@ -35,6 +37,12 @@ struct CivitasApp {
     save_path_text: String,
     status_message: String,
     active_tab: ViewTab,
+
+    // Policy controls
+    policy_tax_rate: f32,
+    policy_emergency_relief: bool,
+    policy_wage_bonus: f32,
+    policy_synced_settlement: Option<SettlementId>,
 
     // Time-series history using VecDeque for O(1) push/pop
     history_ticks: VecDeque<f64>,
@@ -176,6 +184,10 @@ impl CivitasApp {
             save_path_text: "world_save.civ".to_string(),
             status_message: "Ready. Background simulation worker initialized.".to_string(),
             active_tab: config.initial_tab,
+            policy_tax_rate: 0.10,
+            policy_emergency_relief: true,
+            policy_wage_bonus: 0.0,
+            policy_synced_settlement: None,
             history_ticks: VecDeque::with_capacity(300),
             history_living_pop: VecDeque::with_capacity(300),
             history_avg_food_price: VecDeque::with_capacity(300),
@@ -624,12 +636,44 @@ impl CivitasApp {
                 Color32::WHITE,
             );
 
-            // Click detection on settlement node
+            // Click & double-click detection on settlement node
             if response.clicked() {
                 if let Some(mouse_pos) = response.interact_pointer_pos() {
                     if p.distance(mouse_pos) <= radius + 6.0 {
                         self.selected_settlement = Some(*sid);
                     }
+                }
+            }
+            if response.double_clicked() {
+                if let Some(mouse_pos) = response.interact_pointer_pos() {
+                    if p.distance(mouse_pos) <= radius + 6.0 {
+                        self.selected_settlement = Some(*sid);
+                        self.active_tab = ViewTab::SettlementInspector;
+                    }
+                }
+            }
+
+            // Hover tooltip with live settlement metrics
+            if let Some(mouse_pos) = response.hover_pos() {
+                if p.distance(mouse_pos) <= radius + 6.0 {
+                    let food = s
+                        .inventories
+                        .get(&ResourceType::Food)
+                        .copied()
+                        .unwrap_or(0.0);
+                    egui::show_tooltip_text(
+                        ui.ctx(),
+                        ui.layer_id(),
+                        response.id.with(sid),
+                        format!(
+                            "{}\nPopulation: {}\nTreasury: {:.1} coins\nFood Reserves: {:.0} units\nHousing: {:.0}%\nDouble-click to open Inspector",
+                            s.name,
+                            s.population,
+                            s.treasury,
+                            food,
+                            s.housing_utilization() * 100.0
+                        ),
+                    );
                 }
             }
         }
@@ -656,10 +700,95 @@ impl CivitasApp {
             }
         };
 
+        if self.policy_synced_settlement != Some(s_id) {
+            self.policy_tax_rate = settlement.policy.tax_rate;
+            self.policy_emergency_relief = settlement.policy.emergency_relief;
+            self.policy_wage_bonus = settlement.policy.wage_bonus;
+            self.policy_synced_settlement = Some(s_id);
+        }
+
         ui.horizontal(|ui| {
             ui.label(format!("Name: {}", settlement.name));
             ui.label(format!("ID: #{}", settlement.id.0));
             ui.label(format!("Coordinates: ({}, {})", settlement.x, settlement.y));
+            ui.separator();
+            ui.label(format!("Fertility: {:.2}x", settlement.fertility_factor));
+            ui.label(format!("Timber: {:.2}x", settlement.timber_factor));
+            ui.label(format!("Minerals: {:.2}x", settlement.mineral_factor));
+        });
+
+        ui.separator();
+        ui.group(|ui| {
+            ui.heading("Municipal Policy & Governance Controls");
+            ui.horizontal(|ui| {
+                ui.label("Municipal Tax Rate:");
+                if ui
+                    .add(
+                        egui::Slider::new(&mut self.policy_tax_rate, 0.0..=0.50)
+                            .custom_formatter(|n, _| format!("{:.0}%", n * 100.0)),
+                    )
+                    .changed()
+                {
+                    self.worker.send_command(SimCommand::SetSettlementPolicy {
+                        settlement_id: s_id,
+                        policy: SettlementPolicy {
+                            tax_rate: self.policy_tax_rate,
+                            emergency_relief: self.policy_emergency_relief,
+                            wage_bonus: self.policy_wage_bonus,
+                        },
+                    });
+                }
+
+                ui.separator();
+                if ui
+                    .checkbox(&mut self.policy_emergency_relief, "Emergency Bread Dole")
+                    .changed()
+                {
+                    self.worker.send_command(SimCommand::SetSettlementPolicy {
+                        settlement_id: s_id,
+                        policy: SettlementPolicy {
+                            tax_rate: self.policy_tax_rate,
+                            emergency_relief: self.policy_emergency_relief,
+                            wage_bonus: self.policy_wage_bonus,
+                        },
+                    });
+                }
+
+                ui.separator();
+                ui.label("Wage Bonus:");
+                if ui
+                    .add(
+                        egui::Slider::new(&mut self.policy_wage_bonus, -0.50..=1.00)
+                            .custom_formatter(|n, _| format!("{:+.0}%", n * 100.0)),
+                    )
+                    .changed()
+                {
+                    self.worker.send_command(SimCommand::SetSettlementPolicy {
+                        settlement_id: s_id,
+                        policy: SettlementPolicy {
+                            tax_rate: self.policy_tax_rate,
+                            emergency_relief: self.policy_emergency_relief,
+                            wage_bonus: self.policy_wage_bonus,
+                        },
+                    });
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let timber = *settlement.inventories.get(&ResourceType::Timber).unwrap_or(&0.0);
+                let stone = *settlement.inventories.get(&ResourceType::Stone).unwrap_or(&0.0);
+                let can_build = settlement.treasury >= 50.0 && timber >= 10.0 && stone >= 5.0;
+                let btn = egui::Button::new("Commission Housing Expansion (+25 capacity)");
+                if ui.add_enabled(can_build, btn).clicked() {
+                    self.worker
+                        .send_command(SimCommand::CommissionHousing { settlement_id: s_id });
+                }
+                ui.label(format!(
+                    "Cost: 50.0 coins, 10.0 timber, 5.0 stone | Available: {:.1} coins, {:.1} timber, {:.1} stone",
+                    settlement.treasury, timber, stone
+                ));
+            });
         });
 
         ui.separator();
@@ -718,6 +847,64 @@ impl CivitasApp {
                 }
             });
         });
+
+        ui.separator();
+        ui.heading("Resident Households");
+        let h_dir = Arc::clone(&self.snapshot.households);
+        let mut resident_hhs: Vec<&Household> = h_dir
+            .households
+            .values()
+            .filter(|h| h.settlement_id == s_id)
+            .collect();
+        resident_hhs.sort_by_key(|h| h.id.0);
+
+        ui.label(format!(
+            "Total Households in Settlement: {}",
+            resident_hhs.len()
+        ));
+
+        egui::ScrollArea::vertical()
+            .max_height(200.0)
+            .show(ui, |ui| {
+                egui::Grid::new("settlement_resident_hhs_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("Household");
+                        ui.label("Head Citizen");
+                        ui.label("Members");
+                        ui.label("Savings");
+                        ui.label("Food Reserve");
+                        ui.label("Action");
+                        ui.end_row();
+
+                        let mut to_inspect_citizen = None;
+                        let mut to_inspect_hh = None;
+
+                        for hh in resident_hhs.iter().take(50) {
+                            ui.label(format!("#{}", hh.id.0));
+                            if ui.link(format!("Citizen #{}", hh.head.0)).clicked() {
+                                to_inspect_citizen = Some(hh.head);
+                            }
+                            ui.label(format!("{}", hh.members.len()));
+                            ui.label(format!("{:.1} coins", hh.savings));
+                            ui.label(format!("{:.1} units", hh.food_reserve));
+                            if ui.button("Inspect").clicked() {
+                                to_inspect_hh = Some(hh.id);
+                            }
+                            ui.end_row();
+                        }
+
+                        if let Some(cid) = to_inspect_citizen {
+                            self.selected_citizen = Some(cid);
+                            self.request_citizen_details(cid);
+                            self.active_tab = ViewTab::CitizenInspector;
+                        }
+                        if let Some(hid) = to_inspect_hh {
+                            self.selected_household = Some(hid);
+                            self.active_tab = ViewTab::HouseholdInspector;
+                        }
+                    });
+            });
     }
 
     fn render_citizen_inspector(&mut self, ui: &mut egui::Ui) {
@@ -738,7 +925,7 @@ impl CivitasApp {
 
         ui.separator();
 
-        if let Some(details) = &self.inspected_citizen_details {
+        if let Some(details) = self.inspected_citizen_details.clone() {
             let m = &details.meta;
             let d = &details.demographics;
             let hr = &details.household_ref;
@@ -771,7 +958,13 @@ impl CivitasApp {
                     ui.label(format!("Shelter: {}/100", n.shelter));
                     ui.label(format!("Comfort: {}/100", n.comfort));
                     ui.separator();
-                    ui.label(format!("Settlement: #{}", sr.settlement_id.0));
+                    ui.horizontal(|ui| {
+                        ui.label("Settlement:");
+                        if ui.link(format!("Settlement #{}", sr.settlement_id.0)).clicked() {
+                            self.selected_settlement = Some(sr.settlement_id);
+                            self.active_tab = ViewTab::SettlementInspector;
+                        }
+                    });
                     ui.horizontal(|ui| {
                         ui.label(format!("Household: #{} ({:?})", hr.household_id.0, hr.role));
                         if ui.button("Inspect Household").clicked() {
@@ -781,19 +974,48 @@ impl CivitasApp {
                     });
                     ui.separator();
                     ui.heading("Kinship & Lineage");
-                    ui.label(format!(
-                        "Spouse: {}",
-                        k.spouse.map_or_else(|| "None (Unmarried)".to_string(), |id| format!("Citizen #{}", id.0))
-                    ));
-                    ui.label(format!(
-                        "Parent A: {}",
-                        k.parent_a.map_or_else(|| "None (Founding generation)".to_string(), |id| format!("Citizen #{}", id.0))
-                    ));
-                    ui.label(format!(
-                        "Parent B: {}",
-                        k.parent_b.map_or_else(|| "None (Founding generation)".to_string(), |id| format!("Citizen #{}", id.0))
-                    ));
+                    let mut target_inspect_citizen = None;
+
+                    ui.horizontal(|ui| {
+                        ui.label("Spouse:");
+                        if let Some(spouse_id) = k.spouse {
+                            if ui.link(format!("Citizen #{}", spouse_id.0)).clicked() {
+                                target_inspect_citizen = Some(spouse_id);
+                            }
+                        } else {
+                            ui.label("None (Unmarried)");
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Parent A:");
+                        if let Some(p_id) = k.parent_a {
+                            if ui.link(format!("Citizen #{}", p_id.0)).clicked() {
+                                target_inspect_citizen = Some(p_id);
+                            }
+                        } else {
+                            ui.label("None (Founding generation)");
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Parent B:");
+                        if let Some(p_id) = k.parent_b {
+                            if ui.link(format!("Citizen #{}", p_id.0)).clicked() {
+                                target_inspect_citizen = Some(p_id);
+                            }
+                        } else {
+                            ui.label("None (Founding generation)");
+                        }
+                    });
+
                     ui.label(format!("Total Children: {}", k.children_count));
+
+                    if let Some(target_cid) = target_inspect_citizen {
+                        self.selected_citizen = Some(target_cid);
+                        self.citizen_search_text = target_cid.0.to_string();
+                        self.request_citizen_details(target_cid);
+                    }
                 });
 
                 cols[1].group(|ui| {
@@ -865,10 +1087,16 @@ impl CivitasApp {
         if let Some(hh) = h_dir.get(target_hh_id) {
             ui.group(|ui| {
                 ui.heading(format!("Household #{}", hh.id.0));
-                ui.label(format!(
-                    "Settlement Location: Settlement #{}",
-                    hh.settlement_id.0
-                ));
+                ui.horizontal(|ui| {
+                    ui.label("Settlement Location:");
+                    if ui
+                        .link(format!("Settlement #{}", hh.settlement_id.0))
+                        .clicked()
+                    {
+                        self.selected_settlement = Some(hh.settlement_id);
+                        self.active_tab = ViewTab::SettlementInspector;
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.label(format!("Head Citizen: #{}", hh.head.0));
                     if ui.button("Inspect Head").clicked() {
@@ -883,8 +1111,7 @@ impl CivitasApp {
                 ui.heading(format!("Living Members ({})", hh.members.len()));
                 for &cid in &hh.members {
                     ui.horizontal(|ui| {
-                        ui.label(format!("Member #{}", cid.0));
-                        if ui.button("Inspect Member").clicked() {
+                        if ui.link(format!("Member Citizen #{}", cid.0)).clicked() {
                             self.request_citizen_details(cid);
                             self.active_tab = ViewTab::CitizenInspector;
                         }
@@ -1030,7 +1257,10 @@ impl CivitasApp {
                         }
                     }
                     if let Some(sid) = event.settlement {
-                        ui.label(format!("at Settlement #{}", sid.0));
+                        if ui.link(format!("at Settlement #{}", sid.0)).clicked() {
+                            self.selected_settlement = Some(sid);
+                            self.active_tab = ViewTab::SettlementInspector;
+                        }
                     }
                     ui.label(format!("- {}", event.reason.to_human_explanation()));
                 });

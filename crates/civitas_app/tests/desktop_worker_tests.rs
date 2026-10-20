@@ -271,3 +271,73 @@ fn test_worker_world_generation_and_invariants() {
         "Did not receive post-generation invariant check"
     );
 }
+
+#[test]
+fn test_worker_settlement_policy_and_housing_commands() {
+    let worker = WorkerHandle::new(42, 500);
+    let s0 = civitas_core::types::SettlementId(0);
+
+    // Initial check for Settlement 0
+    let initial_housing = {
+        let snap = worker.snapshot.lock().unwrap().clone();
+        snap.settlements.settlements[&s0].housing_capacity
+    };
+
+    // Update policy for Settlement 0
+    let new_policy = civitas_core::settlement::SettlementPolicy {
+        tax_rate: 0.25,
+        emergency_relief: false,
+        wage_bonus: 0.10,
+    };
+    assert!(worker.send_command(SimCommand::SetSettlementPolicy {
+        settlement_id: s0,
+        policy: new_policy,
+    }));
+
+    // Step 1 tick to let worker process command
+    assert!(worker.send_command(SimCommand::Step(1)));
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        if let Some(WorkerResponse::StatusMessage(msg)) = worker.try_recv_response() {
+            if msg.contains("Stepped 1 ticks") {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    {
+        let snap = worker.snapshot.lock().unwrap().clone();
+        assert_eq!(snap.settlements.settlements[&s0].policy.tax_rate, 0.25);
+        assert!(!snap.settlements.settlements[&s0].policy.emergency_relief);
+        assert_eq!(snap.settlements.settlements[&s0].policy.wage_bonus, 0.10);
+    }
+
+    // Commission housing expansion for Settlement 0
+    assert!(worker.send_command(SimCommand::CommissionHousing { settlement_id: s0 }));
+
+    let mut housing_confirmed = false;
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        if let Some(WorkerResponse::StatusMessage(msg)) = worker.try_recv_response() {
+            if msg.contains("Housing expanded at Settlement") {
+                housing_confirmed = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        housing_confirmed,
+        "Failed to confirm housing expansion command"
+    );
+
+    {
+        let snap = worker.snapshot.lock().unwrap().clone();
+        assert_eq!(
+            snap.settlements.settlements[&s0].housing_capacity,
+            initial_housing + 25,
+            "Housing capacity should have increased by 25"
+        );
+    }
+}

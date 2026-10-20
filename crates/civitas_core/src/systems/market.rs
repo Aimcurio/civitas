@@ -62,6 +62,57 @@ pub fn market_price_update_system(
     }
 }
 
+pub fn civic_maintenance_system(
+    mut households: ResMut<HouseholdDirectory>,
+    mut settlements: ResMut<SettlementDirectory>,
+) {
+    for hh in households.households.values_mut() {
+        if hh.members.is_empty() {
+            continue;
+        }
+        if let Some(settlement) = settlements.get_mut(hh.settlement_id) {
+            let member_count = hh.members.len() as f64;
+            // Monthly civic contribution proportional to household size and wealth
+            let fee = (member_count * 15.0).min(hh.savings * 0.30);
+            if fee > 0.0 {
+                hh.savings -= fee;
+                settlement.treasury += fee;
+            }
+
+            // Wealthy households purchase tools and luxury goods from municipal markets
+            if hh.savings > 30.0 {
+                let lux_price = settlement.get_price(ResourceType::Luxury) as f64;
+                let lux_inv = settlement
+                    .inventories
+                    .entry(ResourceType::Luxury)
+                    .or_insert(0.0);
+                if *lux_inv >= 1.0 && lux_price > 0.0 {
+                    let cost = 1.0 * lux_price;
+                    if hh.savings >= cost {
+                        *lux_inv -= 1.0;
+                        hh.savings -= cost;
+                        settlement.treasury += cost;
+                    }
+                }
+
+                let tools_price = settlement.get_price(ResourceType::Tools) as f64;
+                let tools_inv = settlement
+                    .inventories
+                    .entry(ResourceType::Tools)
+                    .or_insert(0.0);
+                if *tools_inv >= 1.0 && tools_price > 0.0 {
+                    let cost = 1.0 * tools_price;
+                    if hh.savings >= cost {
+                        *tools_inv -= 1.0;
+                        hh.savings -= cost;
+                        settlement.treasury += cost;
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn household_consumption_system(
     mut households: ResMut<HouseholdDirectory>,
     mut settlements: ResMut<SettlementDirectory>,
@@ -78,9 +129,9 @@ pub fn household_consumption_system(
             continue;
         }
         if let Some(hh) = households.get_mut(hh_ref.household_id) {
-            if finances.savings > 10.0 {
-                let transfer = finances.savings - 10.0;
-                finances.savings = 10.0;
+            if finances.savings > 5.0 {
+                let transfer = finances.savings - 5.0;
+                finances.savings = 5.0;
                 hh.savings += transfer;
             }
         }
@@ -125,6 +176,16 @@ pub fn household_consumption_system(
                 settlement.treasury += total_food_cost;
                 hh.food_reserve = (hh.food_reserve + affordable_food as f32).min(50.0);
                 hh.migration_pressure = (hh.migration_pressure - 0.2).max(0.0);
+            } else if settlement.policy.emergency_relief && *food_inv >= 1.0 {
+                // Emergency Bread Dole: Settlement warehouse distributes sustenance rations to prevent mass starvation in abundance
+                let dole = (needed_food.min(member_count * 0.5)).min(*food_inv);
+                if dole > 0.0 {
+                    *food_inv -= dole;
+                    hh.food_reserve = (hh.food_reserve + dole as f32).min(50.0);
+                    hh.migration_pressure = (hh.migration_pressure - 0.1).max(0.0);
+                } else {
+                    hh.migration_pressure += 0.5;
+                }
             } else {
                 // Food deficit or impoverishment
                 hh.migration_pressure += 0.5;

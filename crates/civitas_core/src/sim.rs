@@ -16,7 +16,9 @@ use crate::systems::demographics::{
     demographics_aging_system, marriage_system, reproduction_system, NextCitizenId,
 };
 use crate::systems::labor::labor_market_system;
-use crate::systems::market::{household_consumption_system, market_price_update_system};
+use crate::systems::market::{
+    civic_maintenance_system, household_consumption_system, market_price_update_system,
+};
 use crate::systems::migration::{migration_evaluation_system, migration_transit_system};
 use crate::systems::physiology::physiology_system;
 use crate::systems::production::production_system;
@@ -90,7 +92,35 @@ impl Simulation {
 
         for (sid, x, y) in &settlement_nodes {
             let name = format!("Settlement-{}", sid.0);
-            let s = Settlement::new(*sid, name, *x, *y, capacity_per_settlement);
+            let mut s = Settlement::new(*sid, name, *x, *y, capacity_per_settlement);
+
+            // Compute environmental factors from local 3x3 terrain neighborhood
+            let mut total_fert = 0u32;
+            let mut total_timb = 0u32;
+            let mut total_min = 0u32;
+            let mut sample_count = 0u32;
+
+            let min_x = x.saturating_sub(1);
+            let max_x = (x + 1).min(map_width.saturating_sub(1));
+            let min_y = y.saturating_sub(1);
+            let max_y = (y + 1).min(map_height.saturating_sub(1));
+
+            for sy in min_y..=max_y {
+                for sx in min_x..=max_x {
+                    if let Some(tile) = world_map.get_tile(sx, sy) {
+                        total_fert += tile.fertility as u32;
+                        total_timb += tile.timber_richness as u32;
+                        total_min += tile.mineral_richness as u32;
+                        sample_count += 1;
+                    }
+                }
+            }
+
+            let n = sample_count.max(1) as f32;
+            s.fertility_factor = ((total_fert as f32 / n) / 100.0).clamp(0.2, 2.5);
+            s.timber_factor = ((total_timb as f32 / n) / 100.0).clamp(0.2, 2.5);
+            s.mineral_factor = ((total_min as f32 / n) / 100.0).clamp(0.2, 2.5);
+
             settlements.settlements.insert(*sid, s);
         }
 
@@ -248,6 +278,7 @@ impl Simulation {
 
         let mut monthly = Schedule::default();
         monthly.add_systems((
+            civic_maintenance_system,
             migration_evaluation_system,
             reproduction_system,
             marriage_system,
@@ -317,6 +348,7 @@ impl Simulation {
 
         let mut monthly = Schedule::default();
         monthly.add_systems((
+            civic_maintenance_system,
             migration_evaluation_system,
             reproduction_system,
             marriage_system,

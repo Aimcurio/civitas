@@ -32,13 +32,15 @@ pub fn production_system(
         }
 
         if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
-            let wage = settlement.get_wage(occ_profile.occupation);
+            let gross_wage = settlement.effective_wage(occ_profile.occupation);
+            let tax_rate = settlement.policy.tax_rate.clamp(0.0, 0.50);
+            let net_wage = (gross_wage * (1.0 - tax_rate)).max(0.1);
 
-            // Pay wage if settlement has funds
-            if settlement.treasury >= wage as f64 {
-                settlement.treasury -= wage as f64;
-                finances.savings += wage as f64;
-                finances.last_income = wage;
+            // Pay net wage if settlement has funds (tax withholding remains in municipal treasury)
+            if settlement.treasury >= net_wage as f64 {
+                settlement.treasury -= net_wage as f64;
+                finances.savings += net_wage as f64;
+                finances.last_income = net_wage;
             } else {
                 finances.last_income = 0.0;
             }
@@ -51,44 +53,47 @@ pub fn production_system(
                 occ_profile.productivity = 1.0 + (occ_profile.skill_level as f32) * 0.1;
             }
 
-            // Produce output based on occupation
+            // Produce output based on occupation scaled by local environmental factors
             let output = occ_profile.productivity;
             match occ_profile.occupation {
                 OccupationType::Farmer => {
+                    let yield_amount = (output * 0.8 * settlement.fertility_factor) as f64;
                     let inv = settlement
                         .inventories
                         .entry(ResourceType::Food)
                         .or_insert(0.0);
-                    *inv += (output * 1.5) as f64;
+                    *inv += yield_amount;
                     let sup = settlement
                         .supply_accumulators
                         .entry(ResourceType::Food)
                         .or_insert(0.0);
-                    *sup += output * 1.5;
+                    *sup += yield_amount as f32;
                 }
                 OccupationType::Forester => {
+                    let yield_amount = (output * 0.9 * settlement.timber_factor) as f64;
                     let inv = settlement
                         .inventories
                         .entry(ResourceType::Timber)
                         .or_insert(0.0);
-                    *inv += output as f64;
+                    *inv += yield_amount;
                     let sup = settlement
                         .supply_accumulators
                         .entry(ResourceType::Timber)
                         .or_insert(0.0);
-                    *sup += output;
+                    *sup += yield_amount as f32;
                 }
                 OccupationType::Miner => {
+                    let yield_amount = (output * 0.9 * settlement.mineral_factor) as f64;
                     let inv = settlement
                         .inventories
                         .entry(ResourceType::Stone)
                         .or_insert(0.0);
-                    *inv += output as f64;
+                    *inv += yield_amount;
                     let sup = settlement
                         .supply_accumulators
                         .entry(ResourceType::Stone)
                         .or_insert(0.0);
-                    *sup += output;
+                    *sup += yield_amount as f32;
                 }
                 OccupationType::Artisan => {
                     let timber = settlement
@@ -97,16 +102,17 @@ pub fn production_system(
                         .or_insert(0.0);
                     if *timber >= 0.5 {
                         *timber -= 0.5;
+                        let yield_amount = (output * 0.5) as f64;
                         let tools = settlement
                             .inventories
                             .entry(ResourceType::Tools)
                             .or_insert(0.0);
-                        *tools += (output * 0.5) as f64;
+                        *tools += yield_amount;
                         let sup = settlement
                             .supply_accumulators
                             .entry(ResourceType::Tools)
                             .or_insert(0.0);
-                        *sup += output * 0.5;
+                        *sup += yield_amount as f32;
                     }
                 }
                 OccupationType::Merchant => {
@@ -117,16 +123,17 @@ pub fn production_system(
                         .or_insert(0.0);
                     if *timber >= 0.5 {
                         *timber -= 0.5;
+                        let yield_amount = (output * 0.25) as f64;
                         let lux = settlement
                             .inventories
                             .entry(ResourceType::Luxury)
                             .or_insert(0.0);
-                        *lux += (output * 0.25) as f64;
+                        *lux += yield_amount;
                         let sup = settlement
                             .supply_accumulators
                             .entry(ResourceType::Luxury)
                             .or_insert(0.0);
-                        *sup += output * 0.25;
+                        *sup += yield_amount as f32;
                     }
                 }
                 OccupationType::Laborer => {
