@@ -30,11 +30,12 @@ pub fn demographics_aging_system(
         &HouseholdRef,
         &OccupationProfile,
         &mut PersonalFinances,
+        &MobilityProfile,
     )>,
 ) {
     let tick = clock.tick;
 
-    for (mut meta, mut demo, mut audit, settlement_ref, hh_ref, occ_profile, mut finances) in
+    for (mut meta, mut demo, mut audit, settlement_ref, hh_ref, occ_profile, mut finances, mobility) in
         query.iter_mut()
     {
         if !meta.alive {
@@ -68,13 +69,16 @@ pub fn demographics_aging_system(
                 );
                 audit.trace = trace.clone();
 
+                let is_settled = matches!(mobility.status, MigrationStatus::Settled);
                 if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
                     settlement.total_deaths += 1;
-                    settlement.population = settlement.population.saturating_sub(1);
-                    settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
-                    if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation)
-                    {
-                        *count = count.saturating_sub(1);
+                    if is_settled {
+                        settlement.population = settlement.population.saturating_sub(1);
+                        settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
+                        if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation)
+                        {
+                            *count = count.saturating_sub(1);
+                        }
                     }
                 }
 
@@ -142,12 +146,13 @@ pub fn reproduction_system(
         &HouseholdRef,
         &SettlementRef,
         &mut Kinship,
+        &MobilityProfile,
     )>,
 ) {
     let tick = clock.tick;
 
-    for (meta, mut demo, hh_ref, settlement_ref, mut kinship) in query.iter_mut() {
-        if !meta.alive || meta.gender != Gender::Female {
+    for (meta, mut demo, hh_ref, settlement_ref, mut kinship, mobility) in query.iter_mut() {
+        if !meta.alive || meta.gender != Gender::Female || mobility.status != MigrationStatus::Settled {
             continue;
         }
 

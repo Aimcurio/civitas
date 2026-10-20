@@ -61,6 +61,7 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
 
     let mut living_citizen_ids = BTreeSet::new();
     let mut settlement_pop_counts: BTreeMap<SettlementId, u32> = BTreeMap::new();
+    let mut in_transit_count = 0usize;
     let mut citizen_to_hh: BTreeMap<CitizenId, crate::types::HouseholdId> = BTreeMap::new();
 
     for (meta, hh_ref, settlement_ref, mobility) in query.iter(world) {
@@ -91,6 +92,7 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
                     destination,
                     ..
                 } => {
+                    in_transit_count += 1;
                     if !settlement_dir.settlements.contains_key(&origin) {
                         errors.push(format!(
                             "Citizen {:?} has invalid transit origin {:?}",
@@ -106,6 +108,17 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
                 }
             }
         }
+    }
+
+    // Population conservation check: living = settled + in_transit
+    let total_settled: u32 = settlement_pop_counts.values().sum();
+    if living_citizen_ids.len() != (total_settled as usize + in_transit_count) {
+        errors.push(format!(
+            "Global population conservation failed: total living ({}) != settled ({}) + in-transit ({})",
+            living_citizen_ids.len(),
+            total_settled,
+            in_transit_count
+        ));
     }
 
     // 3. Verify bidirectional household consistency & no ghost citizens in households
@@ -199,4 +212,3 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
         Err(errors)
     }
 }
-

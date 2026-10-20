@@ -1,4 +1,4 @@
-mod worker;
+use civitas_app::worker;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ use worker::{
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-enum ViewTab {
+pub enum ViewTab {
     WorldMap,
     SettlementInspector,
     CitizenInspector,
@@ -54,29 +54,130 @@ struct CivitasApp {
     new_population: usize,
 }
 
+#[derive(Clone, Debug)]
+pub struct CivitasAppConfig {
+    pub seed: u64,
+    pub population: usize,
+    pub initial_tab: ViewTab,
+    pub auto_play: bool,
+    pub speed: u32,
+    pub initial_citizen: Option<CitizenId>,
+    pub initial_settlement: Option<SettlementId>,
+    pub initial_household: Option<HouseholdId>,
+}
+
+impl Default for CivitasAppConfig {
+    fn default() -> Self {
+        Self {
+            seed: 42,
+            population: 5_000,
+            initial_tab: ViewTab::WorldMap,
+            auto_play: false,
+            speed: 1,
+            initial_citizen: Some(CitizenId(1)),
+            initial_settlement: Some(SettlementId(0)),
+            initial_household: Some(HouseholdId(1)),
+        }
+    }
+}
+
+fn parse_args() -> CivitasAppConfig {
+    let mut config = CivitasAppConfig::default();
+    let args: Vec<String> = std::env::args().collect();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--tab" if i + 1 < args.len() => {
+                i += 1;
+                config.initial_tab = match args[i].to_lowercase().as_str() {
+                    "settlements" | "settlement" => ViewTab::SettlementInspector,
+                    "citizens" | "citizen" => ViewTab::CitizenInspector,
+                    "households" | "household" => ViewTab::HouseholdInspector,
+                    "analytics" | "charts" => ViewTab::Analytics,
+                    "events" | "eventlog" | "log" => ViewTab::EventLog,
+                    _ => ViewTab::WorldMap,
+                };
+            }
+            "--play" => {
+                config.auto_play = true;
+            }
+            "--speed" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(s) = args[i].parse::<u32>() {
+                    config.speed = s.clamp(1, 100);
+                }
+            }
+            "--citizen" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(id) = args[i].parse::<u64>() {
+                    config.initial_citizen = Some(CitizenId(id));
+                }
+            }
+            "--settlement" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(id) = args[i].parse::<u16>() {
+                    config.initial_settlement = Some(SettlementId(id));
+                }
+            }
+            "--household" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(id) = args[i].parse::<u32>() {
+                    config.initial_household = Some(HouseholdId(id));
+                }
+            }
+            "--seed" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(s) = args[i].parse::<u64>() {
+                    config.seed = s;
+                }
+            }
+            "--population" if i + 1 < args.len() => {
+                i += 1;
+                if let Ok(p) = args[i].parse::<usize>() {
+                    config.population = p;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    config
+}
+
 impl CivitasApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let seed = 42;
-        let population = 5_000;
+    pub fn new(_cc: &eframe::CreationContext<'_>, config: CivitasAppConfig) -> Self {
+        let seed = config.seed;
+        let population = config.population;
         let worker = WorkerHandle::new(seed, population);
         let initial_snapshot = {
             let lock = worker.snapshot.lock().unwrap();
             lock.clone()
         };
 
+        if config.auto_play {
+            worker.send_command(SimCommand::Play);
+        }
+        if config.speed > 1 {
+            worker.send_command(SimCommand::SetSpeed(config.speed));
+        }
+
+        let initial_citizen = config.initial_citizen.or(Some(CitizenId(1)));
+        let initial_settlement = config.initial_settlement.or(Some(SettlementId(0)));
+        let initial_household = config.initial_household.or(Some(HouseholdId(1)));
+
         let mut app = Self {
             worker,
             snapshot: initial_snapshot,
-            selected_settlement: Some(SettlementId(0)),
-            selected_citizen: Some(CitizenId(1)),
+            selected_settlement: initial_settlement,
+            selected_citizen: initial_citizen,
             inspected_citizen_details: None,
-            selected_household: Some(HouseholdId(1)),
+            selected_household: initial_household,
             household_search_text: String::new(),
             household_page: 0,
-            citizen_search_text: "1".to_string(),
+            citizen_search_text: initial_citizen.map_or("1".to_string(), |c| c.0.to_string()),
             save_path_text: "world_save.civ".to_string(),
             status_message: "Ready. Background simulation worker initialized.".to_string(),
-            active_tab: ViewTab::WorldMap,
+            active_tab: config.initial_tab,
             history_ticks: VecDeque::with_capacity(300),
             history_living_pop: VecDeque::with_capacity(300),
             history_avg_food_price: VecDeque::with_capacity(300),
@@ -88,7 +189,9 @@ impl CivitasApp {
             new_population: 5_000,
         };
 
-        app.request_citizen_details(CitizenId(1));
+        if let Some(cid) = initial_citizen {
+            app.request_citizen_details(cid);
+        }
         app
     }
 
@@ -230,9 +333,9 @@ impl eframe::App for CivitasApp {
                 // Simulation Controls
                 if ui
                     .button(if self.snapshot.is_running {
-                        "⏸ Pause (Space)"
+                        "â¸ Pause (Space)"
                     } else {
-                        "▶ Play (Space)"
+                        "â–¶ Play (Space)"
                     })
                     .clicked()
                 {
@@ -243,7 +346,7 @@ impl eframe::App for CivitasApp {
                     }
                 }
 
-                if ui.button("⏭ Step 1 (.)").clicked() {
+                if ui.button("â­ Step 1 (.)").clicked() {
                     self.worker.send_command(SimCommand::Step(1));
                 }
 
@@ -280,32 +383,32 @@ impl eframe::App for CivitasApp {
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::WorldMap,
-                    "🗺 World Map (Ctrl+1)",
+                    "ðŸ—º World Map (Ctrl+1)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::SettlementInspector,
-                    "🏛 Settlements (Ctrl+2)",
+                    "ðŸ› Settlements (Ctrl+2)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::CitizenInspector,
-                    "👤 Citizen Inspector (Ctrl+3)",
+                    "ðŸ‘¤ Citizen Inspector (Ctrl+3)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::HouseholdInspector,
-                    "🏠 Households (Ctrl+4)",
+                    "ðŸ  Households (Ctrl+4)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::Analytics,
-                    "📈 Analytics & Charts (Ctrl+5)",
+                    "ðŸ“ˆ Analytics & Charts (Ctrl+5)",
                 );
                 ui.selectable_value(
                     &mut self.active_tab,
                     ViewTab::EventLog,
-                    "📜 Event Log (Ctrl+6)",
+                    "ðŸ“œ Event Log (Ctrl+6)",
                 );
             });
         });
@@ -332,7 +435,7 @@ impl eframe::App for CivitasApp {
                 ui.label("Initial Population:");
                 ui.add(egui::Slider::new(&mut self.new_population, 100..=50_000).logarithmic(true));
 
-                if ui.button("🔄 Generate New World").clicked() {
+                if ui.button("ðŸ”„ Generate New World").clicked() {
                     self.worker.send_command(SimCommand::GenerateWorld {
                         seed: self.new_seed,
                         population: self.new_population,
@@ -354,12 +457,12 @@ impl eframe::App for CivitasApp {
                 });
 
                 ui.horizontal(|ui| {
-                    if ui.button("💾 Save State").clicked() {
+                    if ui.button("ðŸ’¾ Save State").clicked() {
                         let path = PathBuf::from(&self.save_path_text);
                         self.worker.send_command(SimCommand::Save(path));
                     }
 
-                    if ui.button("📂 Load State").clicked() {
+                    if ui.button("ðŸ“‚ Load State").clicked() {
                         let path = PathBuf::from(&self.save_path_text);
                         self.worker.send_command(SimCommand::Load(path));
                         self.history_ticks.clear();
@@ -551,7 +654,7 @@ impl CivitasApp {
         };
 
         ui.horizontal(|ui| {
-            ui.label(format!("🏛 Name: {}", settlement.name));
+            ui.label(format!("ðŸ› Name: {}", settlement.name));
             ui.label(format!("ID: #{}", settlement.id.0));
             ui.label(format!("Coordinates: ({}, {})", settlement.x, settlement.y));
         });
@@ -640,9 +743,9 @@ impl CivitasApp {
                     ui.label(format!(
                         "Vital Status: {}",
                         if m.alive {
-                            "🟢 Alive & Active"
+                            "ðŸŸ¢ Alive & Active"
                         } else {
-                            "🔴 Deceased (Historical Record)"
+                            "ðŸ”´ Deceased (Historical Record)"
                         }
                     ));
                     ui.label(format!("Gender: {:?}", m.gender));
@@ -784,11 +887,11 @@ impl CivitasApp {
         let max_pages = (total_hh / items_per_page).max(1);
 
         ui.horizontal(|ui| {
-            if ui.button("◀ Prev Page").clicked() && self.household_page > 0 {
+            if ui.button("â—€ Prev Page").clicked() && self.household_page > 0 {
                 self.household_page -= 1;
             }
             ui.label(format!("Page {} of {}", self.household_page + 1, max_pages));
-            if ui.button("Next Page ▶").clicked() && (self.household_page + 1) < max_pages {
+            if ui.button("Next Page â–¶").clicked() && (self.household_page + 1) < max_pages {
                 self.household_page += 1;
             }
         });
@@ -798,7 +901,7 @@ impl CivitasApp {
             for (hid, hh) in h_dir.households.iter().skip(start).take(items_per_page) {
                 let is_sel = self.selected_household == Some(*hid);
                 let label = format!(
-                    "Household #{} — Settlement #{} — {} members — {:.1} coins — {:.1} food",
+                    "Household #{} â€” Settlement #{} â€” {} members â€” {:.1} coins â€” {:.1} food",
                     hid.0, hh.settlement_id.0, hh.members.len(), hh.savings, hh.food_reserve
                 );
                 if ui.selectable_label(is_sel, label).clicked() {
@@ -907,7 +1010,7 @@ impl CivitasApp {
                     if let Some(sid) = event.settlement {
                         ui.label(format!("at Settlement #{}", sid.0));
                     }
-                    ui.label(format!("— {}", event.reason.to_human_explanation()));
+                    ui.label(format!("â€” {}", event.reason.to_human_explanation()));
                 });
             }
         });
@@ -915,6 +1018,7 @@ impl CivitasApp {
 }
 
 fn main() -> eframe::Result<()> {
+    let config = parse_args();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
@@ -925,6 +1029,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "CIVITAS-1M",
         options,
-        Box::new(|cc| Ok(Box::new(CivitasApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(CivitasApp::new(cc, config)))),
     )
 }

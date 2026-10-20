@@ -1,14 +1,14 @@
 use bevy_ecs::prelude::*;
 
 use crate::components::{
-    CausalAudit, CitizenMeta, Demographics, HouseholdRef, OccupationProfile, PersonalFinances,
-    PhysicalNeeds, SettlementRef,
+    CausalAudit, CitizenMeta, Demographics, HouseholdRef, MobilityProfile, OccupationProfile,
+    PersonalFinances, PhysicalNeeds, SettlementRef,
 };
 use crate::events::{EventRing, SimEvent, SimEventType};
 use crate::household::HouseholdDirectory;
 use crate::settlement::SettlementDirectory;
 use crate::sim::CitizenIndex;
-use crate::types::{DecisionTrace, ReasonCode, ResourceType, SimClock};
+use crate::types::{DecisionTrace, MigrationStatus, ReasonCode, ResourceType, SimClock};
 
 pub fn physiology_system(
     clock: Res<SimClock>,
@@ -25,12 +25,22 @@ pub fn physiology_system(
         &HouseholdRef,
         &OccupationProfile,
         &mut PersonalFinances,
+        &MobilityProfile,
     )>,
 ) {
     let tick = clock.tick;
 
-    for (mut meta, mut needs, mut demo, mut audit, settlement_ref, hh_ref, occ_profile, mut finances) in
-        query.iter_mut()
+    for (
+        mut meta,
+        mut needs,
+        mut demo,
+        mut audit,
+        settlement_ref,
+        hh_ref,
+        occ_profile,
+        mut finances,
+        mobility,
+    ) in query.iter_mut()
     {
         if !meta.alive {
             continue;
@@ -78,12 +88,15 @@ pub fn physiology_system(
             let trace = DecisionTrace::new(ReasonCode::StarvationDeath, tick, 0.0, 0.0, 0);
             audit.trace = trace.clone();
 
+            let is_settled = matches!(mobility.status, MigrationStatus::Settled);
             if let Some(settlement) = settlements.get_mut(settlement_ref.settlement_id) {
                 settlement.total_deaths += 1;
-                settlement.population = settlement.population.saturating_sub(1);
-                settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
-                if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation) {
-                    *count = count.saturating_sub(1);
+                if is_settled {
+                    settlement.population = settlement.population.saturating_sub(1);
+                    settlement.occupied_housing = settlement.occupied_housing.saturating_sub(1);
+                    if let Some(count) = settlement.job_headcounts.get_mut(&occ_profile.occupation) {
+                        *count = count.saturating_sub(1);
+                    }
                 }
             }
 
