@@ -104,7 +104,7 @@ pub fn migration_evaluation_system(
     // CitizenId -> (old_hid, origin_id, target_settlement, util_score, dist, chosen_reason, travel_ticks)
     let mut individual_migrations = std::collections::BTreeMap::new();
 
-    for (meta, mobility, settlement_ref, hh_ref, _, kinship, _, _, demo) in query.iter() {
+    for (meta, mobility, settlement_ref, hh_ref, _, _kinship, _, _, demo) in query.iter() {
         if !meta.alive || mobility.status != MigrationStatus::Settled {
             continue;
         }
@@ -158,8 +158,6 @@ pub fn migration_evaluation_system(
                 candidate_reason = Some(ReasonCode::MigrationFleeingHunger);
             } else if local_housing_shortage && dest.housing_utilization() < 0.65 {
                 candidate_reason = Some(ReasonCode::MigrationCheaperHousing);
-            } else if kinship.spouse.is_some() || kinship.parent_a.is_some() {
-                candidate_reason = Some(ReasonCode::MigrationFamilyReunion);
             }
 
             if let Some(reason) = candidate_reason {
@@ -204,17 +202,10 @@ pub fn migration_evaluation_system(
         }
     }
 
-    // Update origin settlement statistics for migrating cohesive households
-    for (&hid, &(origin_id, target_settlement, _, _, _, _)) in &household_migrations {
+    // Update destination for migrating cohesive households
+    for (&hid, &(_, target_settlement, _, _, _, _)) in &household_migrations {
         if let Some(h) = households.get_mut(hid) {
-            let member_count = h.members.len() as u32;
             h.settlement_id = target_settlement;
-
-            if let Some(orig) = settlements.get_mut(origin_id) {
-                orig.population = orig.population.saturating_sub(member_count);
-                orig.occupied_housing = orig.occupied_housing.saturating_sub(member_count);
-                orig.net_migration -= member_count as i64;
-            }
         }
     }
 
@@ -222,7 +213,7 @@ pub fn migration_evaluation_system(
     for (
         meta,
         mut mobility,
-        _settlement_ref,
+        settlement_ref,
         mut hh_ref,
         mut occ_profile,
         _kinship,
@@ -235,52 +226,12 @@ pub fn migration_evaluation_system(
             continue;
         }
 
-        // Case A: Member of a migrating cohesive household
+        let citizen_origin = settlement_ref.settlement_id;
+
+        // Case B takes priority: Adult child venturing out to start a new household
         if let Some(&(
-            origin_id,
-            target_settlement,
-            util_score,
-            dist,
-            chosen_reason,
-            travel_ticks,
-        )) = household_migrations.get(&hh_ref.household_id)
-        {
-            if let Some(orig) = settlements.get_mut(origin_id) {
-                if let Some(count) = orig.job_headcounts.get_mut(&occ_profile.occupation) {
-                    *count = count.saturating_sub(1);
-                }
-            }
-            occ_profile.occupation = OccupationType::Unemployed;
-            mobility.status = MigrationStatus::InTransit {
-                origin: origin_id,
-                destination: target_settlement,
-                ticks_remaining: travel_ticks,
-                total_ticks: travel_ticks,
-            };
-
-            let trace = DecisionTrace::new(
-                chosen_reason,
-                tick,
-                util_score,
-                dist as f32,
-                target_settlement.0 as u32,
-            );
-            audit.trace = trace.clone();
-
-            if hh_ref.role == HouseholdRole::Head {
-                events.push(SimEvent {
-                    tick,
-                    event_type: SimEventType::MigrationStart,
-                    entity: Some(meta.id),
-                    settlement: Some(origin_id),
-                    reason: trace,
-                });
-            }
-        }
-        // Case B: Adult child venturing out to start a new household
-        else if let Some(&(
             old_hid,
-            origin_id,
+            _req_origin_id,
             target_settlement,
             util_score,
             dist,
@@ -310,7 +261,7 @@ pub fn migration_evaluation_system(
                     tick,
                     event_type: SimEventType::HouseholdDissolved,
                     entity: Some(meta.id),
-                    settlement: Some(origin_id),
+                    settlement: Some(citizen_origin),
                     reason: DecisionTrace::new(
                         ReasonCode::HouseholdDissolved,
                         tick,
@@ -334,7 +285,7 @@ pub fn migration_evaluation_system(
             hh_ref.role = HouseholdRole::Head;
             finances.savings = 0.0;
 
-            if let Some(orig) = settlements.get_mut(origin_id) {
+            if let Some(orig) = settlements.get_mut(citizen_origin) {
                 orig.population = orig.population.saturating_sub(1);
                 orig.occupied_housing = orig.occupied_housing.saturating_sub(1);
                 orig.net_migration -= 1;
@@ -344,7 +295,7 @@ pub fn migration_evaluation_system(
             }
             occ_profile.occupation = OccupationType::Unemployed;
             mobility.status = MigrationStatus::InTransit {
-                origin: origin_id,
+                origin: citizen_origin,
                 destination: target_settlement,
                 ticks_remaining: travel_ticks,
                 total_ticks: travel_ticks,
@@ -363,9 +314,54 @@ pub fn migration_evaluation_system(
                 tick,
                 event_type: SimEventType::MigrationStart,
                 entity: Some(meta.id),
-                settlement: Some(origin_id),
+                settlement: Some(citizen_origin),
                 reason: trace,
             });
+        }
+        // Case A: Member of a migrating cohesive household
+        else if let Some(&(
+            _req_origin_id,
+            target_settlement,
+            util_score,
+            dist,
+            chosen_reason,
+            travel_ticks,
+        )) = household_migrations.get(&hh_ref.household_id)
+        {
+            if let Some(orig) = settlements.get_mut(citizen_origin) {
+                orig.population = orig.population.saturating_sub(1);
+                orig.occupied_housing = orig.occupied_housing.saturating_sub(1);
+                orig.net_migration -= 1;
+                if let Some(count) = orig.job_headcounts.get_mut(&occ_profile.occupation) {
+                    *count = count.saturating_sub(1);
+                }
+            }
+            occ_profile.occupation = OccupationType::Unemployed;
+            mobility.status = MigrationStatus::InTransit {
+                origin: citizen_origin,
+                destination: target_settlement,
+                ticks_remaining: travel_ticks,
+                total_ticks: travel_ticks,
+            };
+
+            let trace = DecisionTrace::new(
+                chosen_reason,
+                tick,
+                util_score,
+                dist as f32,
+                target_settlement.0 as u32,
+            );
+            audit.trace = trace.clone();
+
+            if hh_ref.role == HouseholdRole::Head {
+                events.push(SimEvent {
+                    tick,
+                    event_type: SimEventType::MigrationStart,
+                    entity: Some(meta.id),
+                    settlement: Some(citizen_origin),
+                    reason: trace,
+                });
+            }
         }
     }
 }

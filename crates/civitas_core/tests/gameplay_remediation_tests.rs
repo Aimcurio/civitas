@@ -103,6 +103,102 @@ fn test_multi_year_economic_circulation_and_survival() {
 }
 
 #[test]
+fn test_economic_survival_across_multiple_seeds() {
+    let seeds = [101, 777, 2026, 9999];
+    for &seed in &seeds {
+        let mut sim = Simulation::new(seed, 128, 128, 4, 1_000);
+        for tick in 1..=360 {
+            if seed == 101 && tick == 300 {
+                let s_before = sim.world.resource::<SettlementDirectory>().clone();
+                println!(
+                    "TICK 300 BEFORE S1: pop={}, occ={}; S3: pop={}, occ={}",
+                    s_before.get(SettlementId(1)).unwrap().population,
+                    s_before.get(SettlementId(1)).unwrap().occupied_housing,
+                    s_before.get(SettlementId(3)).unwrap().population,
+                    s_before.get(SettlementId(3)).unwrap().occupied_housing
+                );
+            }
+            sim.step();
+            if seed == 101 && tick == 300 {
+                let mut q = sim.world.query::<(
+                    &CitizenMeta,
+                    &SettlementRef,
+                    &MobilityProfile,
+                    &HouseholdRef,
+                )>();
+                for (meta, s_ref, mob, hh) in q.iter(&sim.world) {
+                    if meta.alive
+                        && mob.status == MigrationStatus::Settled
+                        && s_ref.settlement_id == SettlementId(3)
+                    {
+                        println!(
+                            "SETTLED IN S3: CitizenId({}), hh={:?}, role={:?}",
+                            meta.id.0, hh.household_id, hh.role
+                        );
+                    }
+                }
+            }
+            if let Err(errors) = sim.check_invariants() {
+                panic!(
+                    "Seed {} failed invariants at tick {}: {:?}",
+                    seed, tick, errors
+                );
+            }
+        }
+        let pop = sim.living_citizens_count();
+        let treasury: f64 = sim
+            .world
+            .resource::<SettlementDirectory>()
+            .settlements
+            .values()
+            .map(|s| s.treasury)
+            .sum();
+        let food: f64 = sim
+            .world
+            .resource::<SettlementDirectory>()
+            .settlements
+            .values()
+            .map(|s| {
+                s.inventories
+                    .get(&ResourceType::Food)
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .sum();
+
+        println!(
+            "SEED {} YEAR 1: Pop {}, Treasury {:.1}, Food {:.1}",
+            seed, pop, treasury, food
+        );
+
+        assert!(
+            pop >= 950,
+            "Seed {} suffered abnormal population decline: {}",
+            seed,
+            pop
+        );
+        assert!(
+            treasury >= 1_000.0,
+            "Seed {} suffered treasury liquidity trap: {:.1}",
+            seed,
+            treasury
+        );
+        assert!(
+            food >= 50_000.0,
+            "Seed {} suffered food stock depletion: {:.1}",
+            seed,
+            food
+        );
+        if let Err(errors) = sim.check_invariants() {
+            for e in &errors {
+                println!("SEED {} INVARIANT ERROR: {}", seed, e);
+            }
+            panic!("Seed {} violated simulation invariants: {:?}", seed, errors);
+        }
+    }
+}
+
+#[test]
 fn test_infant_migration_prevention_and_family_cohesion() {
     let mut sim = Simulation::new(42, 128, 128, 4, 200);
 
