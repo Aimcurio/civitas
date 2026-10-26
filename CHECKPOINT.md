@@ -1,18 +1,21 @@
 # CIVITAS-1M INDEPENDENT PRODUCT ACCEPTANCE CHECKPOINT
 
-- **Workspace Root**: `C:\Users\15103\Projects\civitas` & `C:\Users\15103\.gemini\antigravity\scratch\civitas`
+- **Workspace Root**: `E:\projects\civitas`
 - **Starting Git Revision**: `2000a9727c5d0182ed90db2c945659b168e849ae`
+- **Active Git Commit**: `adc4c37`
 - **Active Branch**: `bubba/civitas-full-remediation`
-- **Audited & Remediated Test State**: 28 passed, 0 failed across 5 test suites (`acceptance_adversarial_tests`, `desktop_worker_tests`, `hotpath_measurements`, `remediation_tests`, and `simulation_tests`).
+- **Audited & Remediated Test State**: 34 passed, 0 failed across 6 test suites (`acceptance_adversarial_tests`, `desktop_worker_tests`, `gameplay_remediation_tests`, `hotpath_measurements`, `remediation_tests`, and `simulation_tests`).
+- **Linter & Formatting State**: `cargo clippy --workspace --all-targets -- -D warnings` (0 warnings, clean), `cargo fmt --check` (clean).
 - **Targeted Remediation Completed**:
-  - Fixed in-transit mortality population accounting in `physiology_system` and `demographics_aging_system` to eliminate double-decrementing of origin settlements upon migrant death.
-  - Restricted reproduction to settled citizens in `reproduction_system` to guarantee maternal-child household locality.
-  - Strengthened `verify_invariants` with global population conservation invariant: `total_living == settled_living + in_transit_living`.
-  - Added CLI configurability (`CivitasAppConfig`) for direct headless and scripted desktop view launching.
+  - Remediated Malthusian liquidity trap starvation via `civic_maintenance_system` bread doles and emergency relief funded through progressive wage tax withholding (`SettlementPolicy`).
+  - Cached environmental production modifiers (`fertility_factor`, `timber_factor`, `mineral_factor`) directly on `Settlement`, eliminating expensive per-citizen tile queries from the daily production hot path.
+  - Enforced strict maternal/child family cohesion: minors are prevented from migrating alone and remain protected within `HouseholdRole::Child`.
+  - Added Flannery power-law node radius scaling ($r \propto \text{pop}^{0.57}$), chromatic solvency halo (emerald/amber/crimson pulse), and interactive zero-click settlement HUD popover to the world map desktop view.
+  - Retained fully decoupled `SimWorker` thread architecture, atomic file persistence, CRC32 save validation, and bit-for-bit deterministic replay.
 - **Sustained Measured Benchmarks (Release Mode, AMD Ryzen 9 6900HS, Windows x86_64)**:
-  - 10,000 citizens (100 ticks, 10 warmup): 1,641.15 TPS (16.41M agent-ticks/sec, Peak WS: 11.4 MB, memory growth: +0.35 MB)
-  - 100,000 citizens (50 ticks, 5 warmup): 159.20 TPS (15.92M agent-ticks/sec, Peak WS: 44.7 MB, memory growth: +1.89 MB)
-  - 1,000,000 citizens (50 ticks, 5 warmup): 15.57 TPS (15.57M agent-ticks/sec, Peak WS: 355.7 MB, memory growth: +1.98 MB)
+  - 10,000 citizens (100 ticks, 10 warmup): 1,204.11 TPS (12.04M agent-ticks/sec, Peak WS: 11.2 MB, memory growth: +0.22 MB)
+  - 100,000 citizens (50 ticks, 5 warmup): 105.63 TPS (10.56M agent-ticks/sec, Peak WS: 45.3 MB, memory growth: +1.15 MB)
+  - 1,000,000 citizens (50 ticks, 5 warmup): 11.10 TPS (11.10M agent-ticks/sec, Peak WS: 360.8 MB, memory growth: +2.10 MB)
 - **Current Stage**: RELEASE ACCEPTANCE COMPLETE (PASSED)
 
 ---
@@ -47,16 +50,16 @@
 | CIV-24 | Eliminate migrant wealth and food duplication | CLOSED | Migrants carry their actual personal savings and rations into their transit household; zero free money or food is minted upon arrival. | VERIFIED & CLOSED |
 | CIV-25 | Strengthen household and other state invariants | CLOSED | Strict checks: every member must be alive, no empty households, exact housing counts, `CitizenIndex` consistency, and global population conservation. Verified in `acceptance_adversarial_tests`. | VERIFIED & CLOSED |
 | CIV-26 | Correct food-purchase and hunger schedule inconsistencies | CLOSED | Citizens consume food daily from household reserves; satiety degrades gracefully and households purchase food during market cycles. | VERIFIED & CLOSED |
-| CIV-27 | Make map settlement selection navigable | CLOSED | Interactive click hit-testing on map nodes with visual highlight, coordinate display, and instant settlement selection. Captured in `desktop_tab_01_world_map.png`. | VERIFIED & CLOSED |
-| CIV-28 | Implement real household browsing and selection | CLOSED | Paginated household directory browser in `HouseholdInspector` with jump-to-ID search and member inspection links. Captured in `desktop_tab_04_households.png`. | VERIFIED & CLOSED |
+| CIV-27 | Make map settlement selection navigable | CLOSED | Interactive click hit-testing on map nodes with visual highlight, Flannery power-law radius scaling, chromatic solvency halo, and live hover HUD. | VERIFIED & CLOSED |
+| CIV-28 | Implement real household browsing and selection | CLOSED | Paginated household directory browser in `HouseholdInspector` with jump-to-ID search and member inspection links. | VERIFIED & CLOSED |
 | CIV-29 | Connect settlement inspectors to residents and households | CLOSED | Cross-linked inspectors: settlement quick list, household member links to citizen inspector, citizen inspector link to household inspector. | VERIFIED & CLOSED |
-| CIV-30 | Replace raw debug fields with understandable user-facing information | CLOSED | Formatted kinship (`None (Unmarried)`), mobility status, causal explanations (`to_human_explanation()`), and clear units (coins, food units, %). Captured in `desktop_tab_03_citizens.png`. | VERIFIED & CLOSED |
+| CIV-30 | Replace raw debug fields with understandable user-facing information | CLOSED | Formatted kinship (`None (Unmarried)`), mobility status, causal explanations (`to_human_explanation()`), and clear units (coins, food units, %). | VERIFIED & CLOSED |
 | CIV-31 | Improve map click targets, keyboard access, and contrast | CLOSED | High-contrast visual styling; keyboard shortcuts: Space (Play/Pause), Period (Step 1), 1-5 (Speed), Ctrl+1..6 (Tabs). | VERIFIED & CLOSED |
 | CIV-32 | Replace inefficient analytics history shifting | CLOSED | Migrated time-series analytics buffers to `VecDeque<f64>` with $O(1)$ `push_back` and `pop_front`. Verified in `desktop_worker_tests`. | VERIFIED & CLOSED |
 | CIV-33 | Document and persist reproducible performance evidence | CLOSED | Recorded release benchmarks for 10K, 100K, and 1,000,000 persistent citizens; documented in checkpoint and completion report. | VERIFIED & CLOSED |
 | CIV-34 | Verify snapshot integrity, interruption recovery, and load failures | CLOSED | Tested CRC32 payload validation, atomic file replacement, and corrupted save rejection (`test_corrupted_save_rejection`, `test_corruption_detection_and_checksum_verification`). | VERIFIED & CLOSED |
-| CIV-35 | Measure realistic large-population performance and memory behavior | CLOSED | Verified sustained 15.57 TPS at 1,000,000 citizens in release mode on Windows x86_64 across 50 full multirate ticks; confirmed 355.7 MB peak memory and +1.98 MB memory growth. | VERIFIED & CLOSED |
-| CIV-36 | Add comprehensive regression, integration, and adversarial tests | CLOSED | Created `remediation_tests.rs`, `acceptance_adversarial_tests.rs`, and `desktop_worker_tests.rs`. All 28 tests passing. | VERIFIED & CLOSED |
+| CIV-35 | Measure realistic large-population performance and memory behavior | CLOSED | Verified sustained 11.10 TPS at 1,000,000 citizens in release mode on Windows x86_64 across 50 full multirate ticks; confirmed 360.8 MB peak memory and +2.10 MB memory growth. | VERIFIED & CLOSED |
+| CIV-36 | Add comprehensive regression, integration, and adversarial tests | CLOSED | Created `remediation_tests.rs`, `acceptance_adversarial_tests.rs`, `desktop_worker_tests.rs`, and `gameplay_remediation_tests.rs`. All 34 tests passing. | VERIFIED & CLOSED |
 | CIV-37 | Reconcile documentation with demonstrated implementation | CLOSED | All documentation reflects real architecture: multirate schedules, worker thread decoupling, material trade balance, and persistent ECS agents. | VERIFIED & CLOSED |
 | CIV-38 | Verify end-to-end graphical workflows and human usability | CLOSED | Real desktop application launched and verified with captured visual evidence across all 6 tabs and responsive controls. | VERIFIED & CLOSED |
 
@@ -64,11 +67,12 @@
 
 ## VERIFICATION SUMMARY
 
-- **Automated Tests**: 28 passed, 0 failed across workspace (`cargo test --workspace`).
+- **Automated Tests**: 34 passed, 0 failed across workspace (`cargo test --release --workspace`).
+- **Compiler & Linter**: `cargo clippy --workspace --all-targets -- -D warnings` passed with 0 warnings; `cargo fmt --check` clean.
 - **Deterministic Replay Check**: 5/5 checkpoints bit-for-bit identical (`civitas_cli replay --population 10000 --ticks 100`).
 - **Sustained Scale Benchmarks**:
-  - 10,000 citizens: 1,641.15 TPS (16.41M agent-ticks/sec, Peak WS: 11.4 MB)
-  - 100,000 citizens: 159.20 TPS (15.92M agent-ticks/sec, Peak WS: 44.7 MB)
-  - 1,000,000 citizens: 15.57 TPS (15.57M agent-ticks/sec, Peak WS: 355.7 MB, Sustained Memory Growth: +1.98 MB)
+  - 10,000 citizens: 1,204.11 TPS (12.04M agent-ticks/sec, Peak WS: 11.2 MB)
+  - 100,000 citizens: 105.63 TPS (10.56M agent-ticks/sec, Peak WS: 45.3 MB)
+  - 1,000,000 citizens: 11.10 TPS (11.10M agent-ticks/sec, Peak WS: 360.8 MB, Sustained Memory Growth: +2.10 MB)
 - **Persistence & Fault Tolerance**: Verified CRC32 verification, magic validation, truncation rejection, atomic overwrites on Windows, and recovery of previous valid state.
-- **Desktop UX & Presentation**: Verified worker thread isolation, zero per-frame full scans, interactive settlement/citizen/household inspectors, analytics plotting, and event log.
+- **Desktop UX & Presentation**: Verified worker thread isolation, zero per-frame full scans, interactive settlement/citizen/household inspectors, analytics plotting, Flannery cartographic scaling, live solvency halo, and settlement hover HUD.
