@@ -612,70 +612,250 @@ impl CivitasApp {
             }
         }
 
-        // Draw settlement nodes with click-to-select navigation (CIV-11)
+        // Draw settlement nodes with Flannery power-law radius, chromatic solvency halo, and interactive HUD
+        let mouse_pos = ui.input(|i| i.pointer.hover_pos());
+        let mut hovered_settlement: Option<(
+            SettlementId,
+            civitas_core::settlement::Settlement,
+            Pos2,
+            f32,
+        )> = None;
+
         for (sid, s) in &settlements.settlements {
             let p = map_to_screen(s.x, s.y);
-            let radius = ((s.population as f32).sqrt() * 0.8 * self.camera_zoom).clamp(8.0, 36.0);
+            let pop = (s.population as f32).max(1.0);
+            let radius = (pop.powf(0.57) * 0.45 * self.camera_zoom).clamp(10.0, 52.0);
 
             let is_selected = self.selected_settlement == Some(*sid);
-            let fill_color = if is_selected {
-                Color32::from_rgb(255, 215, 0)
+            let is_hovered = mouse_pos.is_some_and(|m| p.distance(m) <= radius + 6.0);
+            if is_hovered {
+                hovered_settlement = Some((*sid, s.clone(), p, radius));
+            }
+
+            let is_crisis = s.is_crisis();
+            let is_warning = s.is_warning();
+
+            let halo_color = if is_crisis {
+                Color32::from_rgb(220, 40, 40) // Crimson
+            } else if is_warning {
+                Color32::from_rgb(235, 145, 30) // Amber
             } else {
-                Color32::from_rgb(220, 80, 80)
+                Color32::from_rgb(46, 204, 113) // Emerald
             };
 
-            painter.circle_filled(p, radius, fill_color);
-            painter.circle_stroke(p, radius, Stroke::new(2.5_f32, Color32::WHITE));
+            if is_crisis {
+                let time_sec = ui.input(|i| i.time);
+                let phase = (time_sec * 2.0).fract() as f32;
+                let pulse_r = radius + (phase * 20.0);
+                let alpha = ((1.0 - phase) * 160.0) as u8;
+                painter.circle_stroke(
+                    p,
+                    pulse_r,
+                    Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(220, 40, 40, alpha)),
+                );
+            }
 
-            // Name label with clear high-contrast drop shadow
+            let core_fill = if is_selected {
+                Color32::from_rgb(255, 215, 0)
+            } else if is_hovered {
+                Color32::from_rgb(52, 152, 219)
+            } else {
+                Color32::from_rgb(36, 44, 56)
+            };
+
+            painter.circle_stroke(p, radius + 3.0, Stroke::new(3.0_f32, halo_color));
+            painter.circle_filled(p, radius, core_fill);
+            painter.circle_stroke(p, radius, Stroke::new(1.5_f32, Color32::WHITE));
+
+            let text_color = if is_selected {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            };
             painter.text(
-                Pos2::new(p.x, p.y + radius + 4.0),
+                p,
+                egui::Align2::CENTER_CENTER,
+                format!("{}", s.population),
+                egui::FontId::proportional((radius * 0.42).clamp(10.0, 18.0)),
+                text_color,
+            );
+
+            painter.text(
+                Pos2::new(p.x, p.y + radius + 6.0),
                 egui::Align2::CENTER_TOP,
-                format!("{} ({})", s.name, s.population),
-                egui::FontId::proportional(13.0),
-                Color32::WHITE,
+                format!("{} (#{})", s.name, s.id.0),
+                egui::FontId::proportional(12.0),
+                Color32::from_rgb(230, 230, 230),
             );
 
             // Click & double-click detection on settlement node
-            if response.clicked() {
-                if let Some(mouse_pos) = response.interact_pointer_pos() {
-                    if p.distance(mouse_pos) <= radius + 6.0 {
-                        self.selected_settlement = Some(*sid);
-                    }
+            if is_hovered {
+                if response.double_clicked() {
+                    self.selected_settlement = Some(*sid);
+                    self.active_tab = ViewTab::SettlementInspector;
+                } else if response.clicked() {
+                    self.selected_settlement = Some(*sid);
                 }
             }
-            if response.double_clicked() {
-                if let Some(mouse_pos) = response.interact_pointer_pos() {
-                    if p.distance(mouse_pos) <= radius + 6.0 {
-                        self.selected_settlement = Some(*sid);
-                        self.active_tab = ViewTab::SettlementInspector;
-                    }
-                }
+        }
+
+        if let Some((sid, s, p, radius)) = hovered_settlement {
+            let hud_size = Vec2::new(260.0, 175.0);
+            let mut hud_pos = Pos2::new(p.x + radius + 14.0, p.y - 40.0);
+
+            if hud_pos.x + hud_size.x > rect.max.x {
+                hud_pos.x = p.x - radius - hud_size.x - 14.0;
+            }
+            if hud_pos.x < rect.min.x {
+                hud_pos.x = rect.min.x + 10.0;
+            }
+            if hud_pos.y + hud_size.y > rect.max.y {
+                hud_pos.y = rect.max.y - hud_size.y - 10.0;
+            }
+            if hud_pos.y < rect.min.y {
+                hud_pos.y = rect.min.y + 10.0;
             }
 
-            // Hover tooltip with live settlement metrics
-            if let Some(mouse_pos) = response.hover_pos() {
-                if p.distance(mouse_pos) <= radius + 6.0 {
-                    let food = s
-                        .inventories
-                        .get(&ResourceType::Food)
-                        .copied()
-                        .unwrap_or(0.0);
-                    egui::show_tooltip_text(
-                        ui.ctx(),
-                        ui.layer_id(),
-                        response.id.with(sid),
-                        format!(
-                            "{}\nPopulation: {}\nTreasury: {:.1} coins\nFood Reserves: {:.0} units\nHousing: {:.0}%\nDouble-click to open Inspector",
-                            s.name,
-                            s.population,
-                            s.treasury,
-                            food,
-                            s.housing_utilization() * 100.0
-                        ),
+            let hud_rect = Rect::from_min_size(hud_pos, hud_size);
+            painter.rect_filled(
+                hud_rect,
+                6.0,
+                Color32::from_rgba_unmultiplied(18, 24, 34, 240),
+            );
+            painter.rect_stroke(
+                hud_rect,
+                6.0,
+                Stroke::new(1.5_f32, Color32::from_rgb(52, 152, 219)),
+            );
+
+            let mut cur_y = hud_pos.y + 10.0;
+            let draw_line =
+                |painter: &egui::Painter, label: &str, val: &str, color: Color32, y: &mut f32| {
+                    painter.text(
+                        Pos2::new(hud_pos.x + 12.0, *y),
+                        egui::Align2::LEFT_TOP,
+                        label,
+                        egui::FontId::proportional(12.0),
+                        Color32::from_rgb(180, 180, 180),
                     );
-                }
-            }
+                    painter.text(
+                        Pos2::new(hud_pos.x + hud_size.x - 12.0, *y),
+                        egui::Align2::RIGHT_TOP,
+                        val,
+                        egui::FontId::proportional(12.0),
+                        color,
+                    );
+                    *y += 18.0;
+                };
+
+            let status_str = if s.is_crisis() {
+                "CRISIS"
+            } else if s.is_warning() {
+                "STRESS"
+            } else {
+                "HEALTHY"
+            };
+            let status_color = if s.is_crisis() {
+                Color32::from_rgb(230, 50, 50)
+            } else if s.is_warning() {
+                Color32::from_rgb(240, 160, 40)
+            } else {
+                Color32::from_rgb(46, 204, 113)
+            };
+
+            painter.text(
+                Pos2::new(hud_pos.x + 12.0, cur_y),
+                egui::Align2::LEFT_TOP,
+                format!("{} (#{})", s.name, sid.0),
+                egui::FontId::proportional(14.0),
+                Color32::WHITE,
+            );
+            painter.text(
+                Pos2::new(hud_pos.x + hud_size.x - 12.0, cur_y),
+                egui::Align2::RIGHT_TOP,
+                status_str,
+                egui::FontId::proportional(12.0),
+                status_color,
+            );
+            cur_y += 24.0;
+
+            let food_inv = *s
+                .inventories
+                .get(&civitas_core::types::ResourceType::Food)
+                .unwrap_or(&0.0);
+            let food_days = s.days_of_food();
+
+            draw_line(
+                &painter,
+                "Population:",
+                &format!("{}", s.population),
+                Color32::WHITE,
+                &mut cur_y,
+            );
+            draw_line(
+                &painter,
+                "Housing:",
+                &format!(
+                    "{}/{} ({:.0}%)",
+                    s.occupied_housing,
+                    s.housing_capacity,
+                    s.housing_utilization() * 100.0
+                ),
+                Color32::WHITE,
+                &mut cur_y,
+            );
+            draw_line(
+                &painter,
+                "Granary:",
+                &format!("{:.0} ({:.0}d)", food_inv, food_days),
+                if food_days < 10.0 {
+                    Color32::from_rgb(230, 50, 50)
+                } else {
+                    Color32::from_rgb(46, 204, 113)
+                },
+                &mut cur_y,
+            );
+            draw_line(
+                &painter,
+                "Treasury:",
+                &format!("{:.1} (Tax {:.0}%)", s.treasury, s.policy.tax_rate * 100.0),
+                if s.treasury < 250.0 {
+                    Color32::from_rgb(230, 50, 50)
+                } else {
+                    Color32::from_rgb(46, 204, 113)
+                },
+                &mut cur_y,
+            );
+            draw_line(
+                &painter,
+                "Avg Wage:",
+                &format!("{:.2} coins", s.average_wage()),
+                Color32::from_rgb(240, 200, 50),
+                &mut cur_y,
+            );
+            draw_line(
+                &painter,
+                "Relief / Migration:",
+                &format!(
+                    "{} / {:+}",
+                    if s.policy.emergency_relief {
+                        "On"
+                    } else {
+                        "Off"
+                    },
+                    s.net_migration
+                ),
+                Color32::from_rgb(100, 200, 255),
+                &mut cur_y,
+            );
+
+            painter.text(
+                Pos2::new(hud_pos.x + hud_size.x / 2.0, cur_y + 4.0),
+                egui::Align2::CENTER_TOP,
+                "[Double-click: Inspect | Click: Select]",
+                egui::FontId::proportional(10.0),
+                Color32::from_rgb(130, 150, 170),
+            );
         }
     }
 

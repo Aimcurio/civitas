@@ -189,6 +189,27 @@ impl Settlement {
             total_wage / (count as f32)
         }
     }
+
+    pub fn days_of_food(&self) -> f64 {
+        let food = self
+            .inventories
+            .get(&ResourceType::Food)
+            .copied()
+            .unwrap_or(0.0);
+        if self.population > 0 {
+            food / (self.population as f64 * 0.2)
+        } else {
+            999.0
+        }
+    }
+
+    pub fn is_crisis(&self) -> bool {
+        self.treasury < 50.0 || self.days_of_food() < 3.0
+    }
+
+    pub fn is_warning(&self) -> bool {
+        self.treasury < 250.0 || self.days_of_food() < 10.0
+    }
 }
 
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
