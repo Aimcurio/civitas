@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "civitas_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "civitas_app"
+path = "src/main.rs"
+
 [dependencies]
 civitas_core = { path = "../civitas_core" }
 eframe.workspace = true

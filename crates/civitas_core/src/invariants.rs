@@ -61,6 +61,7 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
 
     let mut living_citizen_ids = BTreeSet::new();
     let mut settlement_pop_counts: BTreeMap<SettlementId, u32> = BTreeMap::new();
+    let mut in_transit_count = 0usize;
     let mut citizen_to_hh: BTreeMap<CitizenId, crate::types::HouseholdId> = BTreeMap::new();
 
     for (meta, hh_ref, settlement_ref, mobility) in query.iter(world) {
@@ -91,6 +92,7 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
                     destination,
                     ..
                 } => {
+                    in_transit_count += 1;
                     if !settlement_dir.settlements.contains_key(&origin) {
                         errors.push(format!(
                             "Citizen {:?} has invalid transit origin {:?}",
@@ -108,7 +110,18 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
         }
     }
 
-    // 3. Verify bidirectional household consistency
+    // Population conservation check: living = settled + in_transit
+    let total_settled: u32 = settlement_pop_counts.values().sum();
+    if living_citizen_ids.len() != (total_settled as usize + in_transit_count) {
+        errors.push(format!(
+            "Global population conservation failed: total living ({}) != settled ({}) + in-transit ({})",
+            living_citizen_ids.len(),
+            total_settled,
+            in_transit_count
+        ));
+    }
+
+    // 3. Verify bidirectional household consistency & no ghost citizens in households
     for (&cid, &hid) in &citizen_to_hh {
         if let Some(hh) = hh_dir.get(hid) {
             if !hh.members.contains(&cid) {
@@ -126,21 +139,38 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
     }
 
     for (hid, hh) in &hh_dir.households {
+        if hh.members.is_empty() {
+            errors.push(format!(
+                "Household {:?} has no living members and should have been dissolved",
+                hid
+            ));
+        }
+
+        if !hh.members.contains(&hh.head) {
+            errors.push(format!(
+                "Household {:?} head {:?} is not in active living members list",
+                hid, hh.head
+            ));
+        }
+
         for &member_id in &hh.members {
-            if living_citizen_ids.contains(&member_id) {
-                if let Some(&actual_hid) = citizen_to_hh.get(&member_id) {
-                    if actual_hid != *hid {
-                        errors.push(format!(
-                            "Household {:?} lists Member {:?}, but citizen points to Household {:?}",
-                            hid, member_id, actual_hid
-                        ));
-                    }
+            if !living_citizen_ids.contains(&member_id) {
+                errors.push(format!(
+                    "Household {:?} lists deceased or missing citizen {:?} as active member",
+                    hid, member_id
+                ));
+            } else if let Some(&actual_hid) = citizen_to_hh.get(&member_id) {
+                if actual_hid != *hid {
+                    errors.push(format!(
+                        "Household {:?} lists Member {:?}, but citizen points to Household {:?}",
+                        hid, member_id, actual_hid
+                    ));
                 }
             }
         }
     }
 
-    // 4. Verify settlement population tally consistency
+    // 4. Verify settlement population and occupied housing tally consistency
     for (sid, s) in &settlement_dir.settlements {
         let actual_count = *settlement_pop_counts.get(sid).unwrap_or(&0);
         if s.population != actual_count {
@@ -148,6 +178,31 @@ pub fn verify_invariants(world: &mut World) -> Result<(), Vec<String>> {
                 "Settlement {:?} recorded population {} differs from actual living count {}",
                 sid, s.population, actual_count
             ));
+        }
+        if s.occupied_housing != actual_count {
+            errors.push(format!(
+                "Settlement {:?} recorded occupied_housing {} differs from actual living count {}",
+                sid, s.occupied_housing, actual_count
+            ));
+        }
+    }
+
+    // 5. Verify CitizenIndex consistency if present
+    if let Some(citizen_index) = world.get_resource::<crate::sim::CitizenIndex>() {
+        if citizen_index.active.len() != living_citizen_ids.len() {
+            errors.push(format!(
+                "CitizenIndex active count {} does not match living citizen count {}",
+                citizen_index.active.len(),
+                living_citizen_ids.len()
+            ));
+        }
+        for &cid in &living_citizen_ids {
+            if !citizen_index.active.contains_key(&cid) {
+                errors.push(format!(
+                    "Living citizen {:?} is missing from CitizenIndex active map",
+                    cid
+                ));
+            }
         }
     }
 

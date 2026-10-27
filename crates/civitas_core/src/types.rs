@@ -99,6 +99,8 @@ pub enum ReasonCode {
     MigrationCheaperHousing,
     MigrationFamilyReunion,
     InitialSpawn,
+    SettlementInfrastructureExpansion,
+    MarketPriceShock,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -143,7 +145,8 @@ impl DecisionTrace {
                 self.primary_metric, self.secondary_metric
             ),
             ReasonCode::JobLaidOff => {
-                "Displaced from previous occupation due to production contraction".to_string()
+                "Displaced from previous occupation due to production contraction or low treasury"
+                    .to_string()
             }
             ReasonCode::HouseholdFormedMarriage => format!(
                 "Established independent household with partner #{} at tick {}",
@@ -169,6 +172,14 @@ impl DecisionTrace {
             ReasonCode::MigrationFamilyReunion => format!(
                 "Relocated to rejoin family members in settlement #{}",
                 self.context_id
+            ),
+            ReasonCode::SettlementInfrastructureExpansion => format!(
+                "Expanded settlement housing capacity to {} units",
+                self.primary_metric as u32
+            ),
+            ReasonCode::MarketPriceShock => format!(
+                "Market price shift of {:.1}% due to inventory volatility",
+                self.primary_metric * 100.0
             ),
         }
     }

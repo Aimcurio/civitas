@@ -5,6 +5,23 @@ use std::collections::BTreeMap;
 use crate::types::{OccupationType, ResourceType, SettlementId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SettlementPolicy {
+    pub tax_rate: f32, // Municipal wage tax withheld [0.0, 0.50], default 0.10 (10%)
+    pub emergency_relief: bool, // Municipal bread dole distributed if starving and food exists, default true
+    pub wage_bonus: f32,        // Multiplier on base wages [-0.50, +1.00], default 0.0
+}
+
+impl Default for SettlementPolicy {
+    fn default() -> Self {
+        Self {
+            tax_rate: 0.10,
+            emergency_relief: true,
+            wage_bonus: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settlement {
     pub id: SettlementId,
     pub name: String,
@@ -24,6 +41,10 @@ pub struct Settlement {
     pub total_births: u64,
     pub total_deaths: u64,
     pub net_migration: i64,
+    pub policy: SettlementPolicy,
+    pub fertility_factor: f32,
+    pub timber_factor: f32,
+    pub mineral_factor: f32,
 }
 
 impl Settlement {
@@ -88,7 +109,53 @@ impl Settlement {
             total_births: 0,
             total_deaths: 0,
             net_migration: 0,
+            policy: SettlementPolicy::default(),
+            fertility_factor: 1.0,
+            timber_factor: 1.0,
+            mineral_factor: 1.0,
         }
+    }
+
+    pub fn set_policy(&mut self, mut policy: SettlementPolicy) {
+        policy.tax_rate = policy.tax_rate.clamp(0.0, 0.50);
+        policy.wage_bonus = policy.wage_bonus.clamp(-0.50, 1.00);
+        self.policy = policy;
+    }
+
+    pub fn effective_wage(&self, occ: OccupationType) -> f32 {
+        let base = self.get_wage(occ);
+        let bonus_factor = (1.0 + self.policy.wage_bonus).clamp(0.2, 2.0);
+        let fiscal_factor = if self.treasury < 2_000.0 {
+            (self.treasury as f32 / 2_000.0).clamp(0.40, 1.0)
+        } else {
+            1.0
+        };
+        (base * bonus_factor * fiscal_factor).clamp(0.5, 50.0)
+    }
+
+    pub fn commission_housing_expansion(&mut self) -> Result<(), &'static str> {
+        let timber = *self.inventories.get(&ResourceType::Timber).unwrap_or(&0.0);
+        let stone = *self.inventories.get(&ResourceType::Stone).unwrap_or(&0.0);
+
+        if self.treasury < 50.0 {
+            return Err("Insufficient municipal treasury (requires 50.0 coins)");
+        }
+        if timber < 10.0 {
+            return Err("Insufficient timber in warehouse (requires 10.0 units)");
+        }
+        if stone < 5.0 {
+            return Err("Insufficient stone in warehouse (requires 5.0 units)");
+        }
+
+        self.treasury -= 50.0;
+        if let Some(t) = self.inventories.get_mut(&ResourceType::Timber) {
+            *t -= 10.0;
+        }
+        if let Some(s) = self.inventories.get_mut(&ResourceType::Stone) {
+            *s -= 5.0;
+        }
+        self.housing_capacity += 25;
+        Ok(())
     }
 
     pub fn housing_utilization(&self) -> f32 {
@@ -121,6 +188,27 @@ impl Settlement {
         } else {
             total_wage / (count as f32)
         }
+    }
+
+    pub fn days_of_food(&self) -> f64 {
+        let food = self
+            .inventories
+            .get(&ResourceType::Food)
+            .copied()
+            .unwrap_or(0.0);
+        if self.population > 0 {
+            food / (self.population as f64 * 0.2)
+        } else {
+            999.0
+        }
+    }
+
+    pub fn is_crisis(&self) -> bool {
+        self.treasury < 50.0 || self.days_of_food() < 3.0
+    }
+
+    pub fn is_warning(&self) -> bool {
+        self.treasury < 250.0 || self.days_of_food() < 10.0
     }
 }
 

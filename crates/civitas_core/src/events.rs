@@ -10,6 +10,7 @@ pub enum SimEventType {
     Death,
     JobChange,
     Marriage,
+    HouseholdDissolved,
     MigrationStart,
     MigrationArrival,
     PriceShock,
