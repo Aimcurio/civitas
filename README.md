@@ -1,4 +1,17 @@
-# CIVITAS-1M
+# CIVITAS-1M: Frontier Civilization Simulation Engine
+
+[![Status](https://img.shields.io/badge/Status-Qualified_Local_Slice-green?style=flat-square)](#)
+[![Tech](https://img.shields.io/badge/Tech-Rust_2024-blue?style=flat-square)](#)
+[![Domain](https://img.shields.io/badge/Domain-Civilization_Simulation__Macroeconomics-orange?style=flat-square)](#)
+[![Standard](https://img.shields.io/badge/Standard-BUBBA_2.0_Governance-purple?style=flat-square)](#)
+[![Tests](https://img.shields.io/badge/Tests-34%2F34%20PASS-brightgreen?style=flat-square)](#)
+
+> **Portfolio Classification:** Public Simulation Engine  
+> **Authoritative Root:** `E:\projects\civitas` | **Canonical Spec:** `E:\overview\specs\civitas.json`  
+> **Development Status:** **QUALIFIED / LOCAL SLICE** — 34/34 tests PASS; snapshot baseline verified; deterministic fixed-point macroeconomic price discovery.
+
+---
+
 
 **Frontier-Scale Rust Civilization Simulation Engine**
 
