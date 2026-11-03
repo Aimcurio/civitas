@@ -1,62 +1,145 @@
 # CIVITAS-1M: Frontier Civilization Simulation Engine
 
-![Status](https://img.shields.io/badge/Status-Qualified_Local_Slice-green?style=flat-square) ![Language](https://img.shields.io/badge/Language-Rust_2021-orange?style=flat-square) ![Ecosystem](https://img.shields.io/badge/Ecosystem-Aimcurio_High--Assurance-blue?style=flat-square) ![License](https://img.shields.io/badge/License-MIT_OR_Apache--2.0-lightgrey?style=flat-square)
+[![Status](https://img.shields.io/badge/Status-Qualified_Local_Slice-green?style=flat-square)](#)
+[![Tech](https://img.shields.io/badge/Tech-Rust_2024-blue?style=flat-square)](#)
+[![Domain](https://img.shields.io/badge/Domain-Civilization_Simulation__Macroeconomics-orange?style=flat-square)](#)
+[![Standard](https://img.shields.io/badge/Standard-BUBBA_2.0_Governance-purple?style=flat-square)](#)
+[![Tests](https://img.shields.io/badge/Tests-34%2F34%20PASS-brightgreen?style=flat-square)](#)
 
-**CIVITAS-1M** is a frontier-scale civilization simulation engine engineered in native Rust to model emergent human settlements, macroeconomic price discovery, resource production graphs, trade networks, and demographic lifecycles for up to 1,000,000 individual citizens.
-
----
-
-## Executive Overview
-
-CIVITAS-1M provides a deterministic, high-assurance simulation substrate for exploring emergent societal dynamics. By modeling individual agents with physiological needs, economic behaviors, and generational lifecycles across spatial environments, CIVITAS-1M enables research into macroeconomic equilibrium, settlement resilience, and institutional stability under controlled computational conditions.
-
----
-
-## Architectural Boundaries & Key Capabilities
-
-- **Deterministic Simulation Kernel (`crates/engine`):** Tick-based state transitions with complete reproducibility across random seeds.
-- **Demographic & Lifecycle Modeling (`crates/demographics`):** Age cohorts, mortality curves, generational turnover, and household formation.
-- **Macroeconomic Production & Trade (`crates/economics`):** Double-auction local markets, bilateral trade arbitrage, supply-demand price discovery, and inventory depreciation.
-- **Spatial Grid & Settlement Growth (`crates/spatial`):** Spatial clustering, land-use zoning, and transport friction.
-- **Snapshot & Replay System:** Canonical state serialization, delta diffing, and deterministic session replay.
+> **Portfolio Classification:** Public Simulation Engine  
+> **Authoritative Root:** `E:\projects\civitas` | **Canonical Spec:** `E:\overview\specs\civitas.json`  
+> **Development Status:** **QUALIFIED / LOCAL SLICE** — 34/34 tests PASS; snapshot baseline verified; deterministic fixed-point macroeconomic price discovery.
 
 ---
 
-## Verified Maturity & Current Evidence
 
-| Metric | Verified Status | Evidence Reference |
-| :--- | :--- | :--- |
-| **Maturity Tier** | **QUALIFIED / VERIFIED LOCAL SLICE** | `E:\projects\civitas` (branch `bubba/civitas-full-remediation`) |
-| **Automated Test Suite** | **34 / 34 PASS** (100%) | `crates/engine/tests`, `crates/economics/tests` |
-| **Demonstrated Scale** | Up to 100,000 concurrent agents (local workstation); benchmark suite verified | Snapshot regression tests |
-| **Active Staging** | Pull Request #3 staged (`bubba/civitas-full-remediation` -> `main`) | Commit `fa359ad` |
-| **Planned / In-Progress** | WebAssembly/WebGPU visualizer; distributed cluster execution up to 1,000,000 agents | Milestone Roadmap v0.2 |
+**Frontier-Scale Rust Civilization Simulation Engine**
+
+CIVITAS-1M is an interactive, native Rust simulation engine engineered to model emergent human settlements, macroeconomic price discovery, demographic lifecycles, and migration waves at a scale of up to **1,000,000 persistent individual citizens**.
 
 ---
 
-## Quickstart & Verification
+## 1. Core Architectural Pillars
 
-### Prerequisites
-- Rust 1.78+ (2021 Edition) & Cargo
-- CMake (for optional profiling hooks)
+- **Strict Identity Persistence**: Every citizen is represented by a persistent, individual Entity in columnar Structure-of-Arrays (SoA) component tables via headless `bevy_ecs`. No anonymous aggregate counters or scalar shortcuts are used.
+- **Multirate Deterministic Scheduler**: Daily fine physiological updates, weekly sliced economic market clearing, and monthly demographic/migration evaluations.
+- **Strict Determinism**: Zero reliance on non-deterministic collections (standard `HashMap` and `HashSet` are strictly banned in authoritative state; `BTreeMap` and `indexmap` are used). Cryptographic-grade deterministic PRNG powered by `rand_chacha::ChaCha8Rng`.
+- **Explainable Causality ("Why Did This Happen?")**: Structured `DecisionTrace` records capture exact mathematical push/pull factors, price disparities, and wage ratios behind citizen migrations, job changes, and mortality.
+- **Decoupled Presentation**: Simulation core compiles as a headless library (`civitas_core`). The interactive viewer (`civitas_app`) is built with `egui` via `eframe` and only reads immutable state snapshots.
+- **Checksummed Snapshot Persistence**: Native binary serialization via `bincode` with CRC32 integrity verification and bit-for-bit deterministic replay validation.
 
-### Build & Test
-```powershell
-# Clone repository
-git clone https://github.com/Aimcurio/civitas.git
-cd civitas
+---
 
-# Compile release binary
-cargo build --release --workspace
+## 2. Workspace Organization
 
-# Run full automated test suite
-cargo test --workspace
-
-# Run CLI benchmark
-cargo run --release --bin civitas-cli -- --help
+```
+civitas/
+├── Cargo.toml                  # Virtual workspace configuration & release profile
+├── crates/
+│   ├── civitas_core/           # Authoritative simulation core (bevy_ecs, rules, world, persistence)
+│   ├── civitas_cli/            # Headless command-line runner, benchmarker, and validator
+│   └── civitas_app/            # Decoupled interactive viewer (egui/eframe)
+├── docs/
+│   ├── PRODUCT_CONTRACT.md     # Non-negotiable scope, 1M agent contract, and acceptance criteria
+│   ├── ARCHITECTURE.md         # Component design, ECS primitives, and concurrency
+│   ├── SIMULATION_MODEL.md     # Multirate scheduling cadence and behavioral rules
+│   ├── MEMORY_MODEL.md         # Per-citizen byte budget and RAM scaling projections
+│   ├── DETERMINISM.md          # PRNG streams, collection sanitization, and state hashes
+│   ├── TESTING.md              # Test matrix, invariants, and adversarial scenarios
+│   ├── PERFORMANCE.md          # Benchmark methodology and telemetry reporting
+│   ├── KNOWN_LIMITATIONS.md    # Bounded V1 scope boundaries
+│   ├── LESSONS_LEARNED.md      # Engineering insights and reusable primitives
+│   └── CAPABILITY_GAPS.md      # Future architectural primitives and tooling
+└── CANDIDATE_REPORT.md         # Comprehensive verification evidence and benchmark results
 ```
 
 ---
 
-## Governance & Integrity Boundary
-CIVITAS-1M operates under the **Aimcurio BUBBA 2.0 High-Assurance Standard**. All simulation state changes require verifiable causal attribution and deterministic replay parity.
+## 3. Getting Started
+
+### Prerequisites
+- **Rust Toolchain**: 1.95+ (Tested on Rust 1.97.1)
+- **Supported Platforms**: Windows, Linux, macOS (x86_64 and aarch64)
+
+### Building the Project
+
+```bash
+# Build in debug mode
+cargo build
+
+# Build optimized release binaries
+cargo build --release
+```
+
+---
+
+## 4. Running the Simulator
+
+### Interactive GUI Viewer (`civitas_app`)
+
+Launch the visualizer to explore the procedural world map, inspect settlements, follow citizen lifecycles, and view real-time macroeconomic charts:
+
+```bash
+cargo run --release -p civitas_app
+```
+
+#### Viewer Features:
+- **World Map**: Pan and zoom across procedural terrain, settlement nodes, travel networks, and population density indicators.
+- **Settlement Inspector**: Demographics, housing capacity, warehouse inventories, market clearing prices, and wage levels.
+- **Citizen Inspector**: Examine individual citizens, family lineage, physiological needs, wealth, occupation, and structured causal explanations ("Why did this citizen migrate?").
+- **Household Inspector**: View pooled family savings, food reserves, and migration pressure.
+- **Analytics & Trends**: Live plots of living population trends, commodity prices, and wage levels.
+- **Event Log**: Real-time audit stream of births, deaths, migrations, and market shocks.
+
+---
+
+### Headless CLI (`civitas_cli`)
+
+The simulator runs completely headlessly without graphical dependencies:
+
+#### 1. Generate a Deterministic World
+```bash
+cargo run --release -p civitas_cli -- generate --seed 42 --settlements 8
+```
+
+#### 2. Run Headless Simulation
+```bash
+cargo run --release -p civitas_cli -- run --seed 42 --population 50000 --ticks 100 --save-out snapshot.civ
+```
+
+#### 3. Execute Deterministic Replay Check
+```bash
+cargo run --release -p civitas_cli -- replay --seed 42 --population 10000 --ticks 100
+```
+
+#### 4. Validate Save File Integrity
+```bash
+cargo run --release -p civitas_cli -- validate-save --file snapshot.civ
+```
+
+#### 5. Run Performance Benchmark
+```bash
+# Benchmark 10,000 citizens
+cargo run --release -p civitas_cli -- benchmark --population 10000 --ticks 100
+
+# Benchmark 100,000 citizens
+cargo run --release -p civitas_cli -- benchmark --population 100000 --ticks 100
+
+# Benchmark 1,000,000 persistent citizens
+cargo run --release -p civitas_cli -- benchmark --population 1000000 --ticks 50
+```
+
+---
+
+## 5. Running the Test Suite
+
+```bash
+# Run unit, integration, invariant, determinism, and persistence tests
+cargo test --release --all-targets
+
+# Run strict clippy linting
+cargo clippy --all-targets -- -D warnings
+
+# Verify formatting
+cargo fmt --check
+```
